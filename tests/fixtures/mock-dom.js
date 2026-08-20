@@ -24,6 +24,10 @@ class MockElement {
     return this._attrs[name] ?? null
   }
 
+  getAttributeNames() {
+    return Object.keys(this._attrs)
+  }
+
   getElementsByTagName(tag) {
     if (tag === '*') return this._allDescendants()
     return this._allDescendants().filter(el => el.tagName === tag.toUpperCase())
@@ -99,7 +103,8 @@ function matchesSimpleSelector(sel, el) {
 
   const rest = sel.slice(idx)
   // Match classes, ids, attrs, nth-child (handle escaped chars like \: \/ \[ etc.)
-  const tokenRe = /(\.[^.\[:]+|#[^.\[:]+|\[[^\]]+\]|:nth-child\(\d+\))/g
+  // Token stops at unescaped . [ or : (but not \: which is an escaped colon)
+  const tokenRe = /(\.[^.\\\[:]*(?:\\.[^.\\[]*)*|#[^.\\[:]*|#[^.\\\[:]*(?:\\.[^.\\[]*)*|\[[^\]]+\]|:nth-child\(\d+\))/g
   let m
   while ((m = tokenRe.exec(rest)) !== null) {
     const token = m[0]
