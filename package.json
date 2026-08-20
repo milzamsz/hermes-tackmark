@@ -1,0 +1,15 @@
+{
+  "name": "tackmark",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TackMark — click-to-annotate visual feedback plugin for Hermes Desktop",
+  "author": "freehul",
+  "scripts": {
+    "test": "node tests/normalize-path.test.js && node tests/security.test.js"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "@hermes/plugin-sdk": ">=0.1"
+  },
+  "license": "MIT"
+}

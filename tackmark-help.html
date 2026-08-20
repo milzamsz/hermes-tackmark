@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TackMark 说明</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0f172a; color: #e2e8f0;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    max-width: 480px; width: 100%;
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    padding: 28px 24px;
+  }
+  h1 { font-size: 20px; color: #7dd3fc; margin-bottom: 6px; }
+  .sub { font-size: 12px; color: #94a3b8; margin-bottom: 20px; }
+  ol { list-style: decimal; padding-left: 20px; }
+  li { font-size: 14px; line-height: 1.9; color: #e2e8f0; }
+  code {
+    background: #0f172a; border: 1px solid #334155; border-radius: 4px;
+    padding: 1px 6px; font-size: 12px; color: #4ade80;
+  }
+  .tip {
+    margin-top: 20px; font-size: 12px; color: #94a3b8;
+    border-top: 1px solid #334155; padding-top: 14px; line-height: 1.8;
+  }
+  .en { margin-top: 16px; font-size: 11px; color: #64748b; border-top: 1px dashed #334155; padding-top: 12px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>📌 TackMark</h1>
+    <div class="sub">点击元素 → 标注 → 让 AI 直接改代码</div>
+    <ol>
+      <li>在顶部输入框粘贴页面地址（如 <code>http://localhost:8080/previews/demo.html</code>），回车加载</li>
+      <li>点 <code>📌 标注</code> 进入标注模式，悬停高亮元素</li>
+      <li>点击目标元素，在弹窗里写下意见，点 <code>添加</code></li>
+      <li>写完所有标注后点 <code>发送</code>，AI 会收到精确的选择器和意见</li>
+    </ol>
+    <div class="tip">
+      提示：预览 HTML 产物请用 <code>http://localhost:8080/previews/&lt;文件名&gt;.html</code>；
+      serve.py 已随 Hermes 自启动，端口 8080 始终可用。
+    </div>
+    <div class="en">
+      TackMark — click elements, annotate, and let AI fix code.
+      Load a page, toggle annotation mode, click an element, add a note, then send.
+    </div>
+  </div>
+</body>
+</html>
