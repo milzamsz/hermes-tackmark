@@ -6,11 +6,14 @@
   "description": "Hardened visual annotation plugin for Hermes Desktop — click elements, annotate, and let AI fix code.",
   "author": "OCloud (fork of freehul/tackmark)",
   "scripts": {
-    "test": "node tests/selectors.test.js && node tests/parity.test.js && node tests/url-policy.test.js && node tests/schema.test.js && node tests/payload.test.js && node tests/session.test.js && node tests/normalize-path.test.js && node tests/security.test.js && node tests/metadata-adapter.test.js && node tests/sveltekit-fixtures.test.js"
+    "test": "node tests/selectors.test.js && node tests/parity.test.js && node tests/url-policy.test.js && node tests/schema.test.js && node tests/payload.test.js && node tests/session.test.js && node tests/normalize-path.test.js && node tests/security.test.js && node tests/metadata-adapter.test.js && node tests/sveltekit-fixtures.test.js",
+    "bundle": "node scripts/bundle.mjs",
+    "bundle:watch": "node scripts/bundle.mjs --watch",
+    "install:plugin": "node scripts/install.mjs",
+    "build": "npm run bundle && npm run install:plugin"
   },
-  "peerDependencies": {
-    "react": ">=18",
-    "@hermes/plugin-sdk": ">=0.1"
-  },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "esbuild": "^0.28.2"
+  }
 }
