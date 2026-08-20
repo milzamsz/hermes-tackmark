@@ -299,25 +299,25 @@ function AnnotationPopup({ element, onSubmit, onCancel }) {
     style: {
       top: `${top}px`,
       left: `${left}px`,
-      background: '#1e293b',
-      color: '#ffffff',
-      border: '1px solid #334155',
+      background: 'var(--ui-bg-elevated)',
+      color: 'var(--ui-text-primary)',
+      border: '1px solid var(--ui-stroke-secondary)',
     },
     onClick: (e) => e.stopPropagation(),
     children: [
       jsx('div', {
         className: 'text-xs mb-2 break-all',
-        style: { color: '#7dd3fc' },
+        style: { color: 'var(--ui-accent-secondary)' },
         children: `${element.tag} ${element.classes.map(c => `.${c}`).join('')}`
       }),
       jsx('input', {
         ref: inputRef,
         type: 'text',
-        className: 'w-full px-2 py-1.5 border rounded text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
+        className: 'w-full px-2 py-1.5 border rounded text-sm mb-2 focus:outline-none focus:ring-2',
         style: {
-          background: '#0f172a',
-          color: '#ffffff',
-          border: '1px solid #475569',
+          background: 'var(--ui-bg-input)',
+          color: 'var(--ui-text-primary)',
+          border: '1px solid var(--ui-stroke-tertiary)',
         },
         placeholder: 'Add annotation...',
         value: comment,
@@ -332,13 +332,13 @@ function AnnotationPopup({ element, onSubmit, onCancel }) {
         children: [
           jsx('button', {
             className: 'px-2 py-1 text-xs',
-            style: { color: '#cbd5e1' },
+            style: { color: 'var(--ui-text-secondary)' },
             onClick: onCancel,
             children: 'Cancel'
           }),
           jsx('button', {
             className: 'px-2 py-1 text-xs rounded',
-            style: { background: '#22c55e', color: '#ffffff' },
+            style: { background: 'var(--ui-green)', color: 'var(--ui-text-primary)' },
             onClick: handleSubmit,
             children: 'Add'
           })
@@ -566,11 +566,20 @@ function PreviewPanel() {
     children: [
       // Toolbar
       jsxs('div', {
-        className: 'flex items-center gap-2 p-2 border-b border-gray-200 bg-gray-50',
+        className: 'flex items-center gap-2 p-2 border-b',
+        style: {
+          borderColor: 'var(--ui-stroke-secondary)',
+          background: 'var(--ui-bg-chrome)',
+        },
         children: [
           jsx('input', {
             type: 'text',
-            className: 'flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500',
+            className: 'flex-1 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-2',
+            style: {
+              borderColor: 'var(--ui-stroke-tertiary)',
+              background: 'var(--ui-bg-input)',
+              color: 'var(--ui-text-primary)',
+            },
             placeholder: 'Enter URL (e.g. http://localhost:3000)',
             value: url,
             onChange: (e) => {
@@ -586,7 +595,7 @@ function PreviewPanel() {
           }),
           jsx('button', {
             className: 'px-2 py-1 text-xs',
-            style: { color: '#334155' },
+            style: { color: 'var(--ui-text-tertiary)' },
             onClick: () => {
               pluginStorage.set('lastUrl', url)
               loadPage(url)
@@ -595,19 +604,20 @@ function PreviewPanel() {
           }),
           jsx('button', {
             className: 'px-2 py-1 text-xs',
-            style: { color: isAnnotating ? '#16a34a' : '#334155' },
+            style: { color: isAnnotating ? 'var(--ui-green)' : 'var(--ui-text-tertiary)' },
             onClick: toggleAnnotation,
             children: isAnnotating ? '🎯 Annotating' : '📌 Annotate'
           }),
           jsx('button', {
-            className: 'px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50',
+            className: 'px-2 py-1 text-xs rounded disabled:opacity-50',
+            style: { background: 'var(--ui-green)', color: 'var(--ui-text-primary)' },
             onClick: sendToAgent,
             disabled: pendingCount === 0,
             children: `Send (${pendingCount})`
           }),
           jsx('button', {
             className: 'px-2 py-1 text-xs',
-            style: { color: '#334155' },
+            style: { color: 'var(--ui-text-tertiary)' },
             onClick: clearAnnotations,
             children: 'Clear'
           })
