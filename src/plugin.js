@@ -260,11 +260,13 @@ const ANNOTATION_SCRIPT = `
     function fitPreview() {
       var docEl = document.documentElement;
       if (!fitW || !fitH) {
-        fitW = docEl.scrollWidth;
-        fitH = docEl.scrollHeight;
+        fitW = docEl.scrollWidth || 0;
+        fitH = docEl.scrollHeight || 0;
       }
       if (!fitW || !fitH) return;
       var scale = Math.min(window.innerWidth / fitW, window.innerHeight / fitH);
+      // Guard against zero/negative scale (blank page or display:none)
+      if (!isFinite(scale) || scale <= 0) return;
       var zoom = Math.min(scale, 1);
       docEl.style.zoom = zoom < 1 ? String(zoom) : '';
       document.body.style.overflowX = 'hidden';
@@ -374,17 +376,23 @@ function AnnotationPopup({ element, onSubmit, onCancel }) {
 
 // Preview panel component
 function PreviewPanel() {
-  const [url, setUrl] = useState(() => {
+  // `loadedUrl` is the URL currently loaded in the iframe (or being loaded).
+  // `urlInput` is the text the user is typing in the input field.
+  // Separating these prevents partial typing from being persisted or used
+  // in annotation payloads, and lets us show a "loading" indicator.
+  const [loadedUrl, setLoadedUrl] = useState(() => {
     const saved = pluginStorage.get('lastUrl')
     if (saved) return saved
     return DEFAULT_URL
   })
+  const [urlInput, setUrlInput] = useState(loadedUrl)
   const [annotations, setAnnotations] = useState([])
   const [isAnnotating, setIsAnnotating] = useState(false)
   const isAnnotatingRef = useRef(false)
   const [selectedElement, setSelectedElement] = useState(null)
   const [showPopup, setShowPopup] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const iframeRef = useRef(null)
 
   // Handle iframe messages — uses strict schema validation
@@ -432,11 +440,14 @@ function PreviewPanel() {
 
   // Initial load
   useEffect(() => {
-    loadPage(url)
+    loadPage(loadedUrl)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Load page: fetch HTML → inject annotation script → srcdoc
+  // If fetch fails (CORS), fall back to iframe.src with allow-same-origin
+  // so the page loads with its resources. Annotation won't work in that
+  // mode, but at least the page is visible.
   // Iterative fallback (no recursive self-healing)
   const loadPage = useCallback(async (targetUrl, isFallback = false) => {
     const iframe = iframeRef.current
@@ -448,6 +459,8 @@ function PreviewPanel() {
       host.notify({ kind: 'error', message: policy.reason })
       return
     }
+
+    setIsLoading(true)
 
     try {
       const cacheBust = targetUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`
@@ -463,22 +476,26 @@ function PreviewPanel() {
         html = baseTag + scriptTag + html
       }
       iframe.srcdoc = html
-      // Persist URL using plugin storage (ctx.storage with localStorage fallback)
+      // Switch to sandbox with allow-scripts only (annotation works)
+      iframe.sandbox = 'allow-scripts'
+      // Persist the loaded URL
       pluginStorage.set('lastUrl', targetUrl)
+      setLoadedUrl(targetUrl)
+      setUrlInput(targetUrl)
       setLoadFailed(false)
     } catch (e) {
-      const errMsg = e?.message || String(e)
-      host.notify({ kind: 'error', message: `Load failed: ${errMsg}` })
-      // Iterative fallback: only fall back once, don't recurse
-      if (!isFallback && targetUrl !== DEFAULT_URL) {
-        pluginStorage.remove('lastUrl')
-        setUrl(DEFAULT_URL)
-        loadPage(DEFAULT_URL, true)
-      } else {
-        // Even the default URL failed — set iframe directly
-        setLoadFailed(true)
-        iframe.src = targetUrl
-      }
+      // Fetch failed (likely CORS). Fall back to loading the URL directly
+      // in the iframe with allow-same-origin so resources load. Annotation
+      // mode won't work in this fallback, but the page is at least visible.
+      iframe.sandbox = 'allow-scripts allow-same-origin'
+      iframe.src = targetUrl
+      pluginStorage.set('lastUrl', targetUrl)
+      setLoadedUrl(targetUrl)
+      setUrlInput(targetUrl)
+      setLoadFailed(true)
+      host.notify({ kind: 'warning', message: `Loaded directly (annotation disabled): ${e?.message || e}` })
+    } finally {
+      setIsLoading(false)
     }
   }, [])
 
@@ -501,7 +518,7 @@ function PreviewPanel() {
     if (!selectedElement) return
 
     const newAnnotation = createAnnotation({
-      page: { url: url },
+      page: { url: loadedUrl },
       target: {
         selector: selectedElement.selector,
         selectorStrategy: selectedElement.selectorStrategy,
@@ -522,7 +539,7 @@ function PreviewPanel() {
 
     haptic('success')
     host.notify({ kind: 'success', message: 'Annotation added' })
-  }, [selectedElement, url])
+  }, [selectedElement, loadedUrl])
 
   // Send annotations to agent — uses focused session + streaming success detection
   const sendToAgent = useCallback(async () => {
@@ -549,7 +566,7 @@ function PreviewPanel() {
       // Format structured payload with untrusted-content framing
       const text = formatAgentPrompt({
         annotations: pending,
-        page: { url },
+        page: { url: loadedUrl },
         session: { id: safety.sessionId },
       })
 
@@ -577,7 +594,7 @@ function PreviewPanel() {
       ))
       host.notify({ kind: 'error', message: 'Send failed: ' + error.message })
     }
-  }, [annotations, url])
+  }, [annotations, loadedUrl])
 
   const clearAnnotations = useCallback(() => {
     setAnnotations([])
@@ -605,27 +622,32 @@ function PreviewPanel() {
               background: 'var(--ui-bg-input)',
               color: 'var(--ui-text-primary)',
             },
-            placeholder: 'Enter URL (e.g. http://localhost:3000)',
-            value: url,
-            onChange: (e) => {
-              setUrl(e.target.value)
-              pluginStorage.set('lastUrl', e.target.value)
-            },
+            placeholder: 'http://localhost:3000',
+            value: urlInput,
+            onChange: (e) => setUrlInput(e.target.value),
             onKeyDown: (e) => {
               if (e.key === 'Enter') {
-                pluginStorage.set('lastUrl', url)
-                loadPage(url)
+                loadPage(urlInput.trim())
               }
             }
           }),
           jsx('button', {
+            className: 'px-2 py-1 text-xs rounded',
+            style: {
+              background: isLoading ? 'var(--ui-stroke-tertiary)' : 'var(--ui-accent-secondary)',
+              color: 'var(--ui-text-primary)',
+              opacity: isLoading ? 0.6 : 1,
+            },
+            onClick: () => loadPage(urlInput.trim()),
+            disabled: isLoading,
+            children: isLoading ? 'Loading…' : 'Load'
+          }),
+          jsx('button', {
             className: 'px-2 py-1 text-xs',
             style: { color: 'var(--ui-text-tertiary)' },
-            onClick: () => {
-              pluginStorage.set('lastUrl', url)
-              loadPage(url)
-            },
-            children: 'Refresh'
+            onClick: () => loadPage(loadedUrl),
+            disabled: isLoading,
+            children: '↻'
           }),
           jsx('button', {
             className: 'px-2 py-1 text-xs',
