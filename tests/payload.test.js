@@ -65,5 +65,32 @@ const out_a = formatAgentPrompt({ annotations: [ann1, ann2], page })
 const out_b = formatAgentPrompt({ annotations: [ann1, ann2], page })
 check('deterministic output', out_a === out_b, true)
 
+console.log('\n--- Metadata in payload ---')
+const metaAnn = {
+  id: 'ann_meta', note: 'Fix the submit button',
+  target: {
+    selector: '#submit', tag: 'button', classes: ['btn'], text: 'Submit',
+    metadata: [
+      { name: 'data-testid', value: 'submit-btn' },
+      { name: 'data-oe-model', value: 'res.partner' },
+      { name: 'data-oe-id', value: '42' },
+    ],
+    rect: { x: 10, y: 20, width: 80, height: 32 },
+    styles: { display: 'flex' },
+  }
+}
+const metaOut = formatAgentPrompt({ annotations: [metaAnn], page })
+checkTrue('payload has semantic metadata section', metaOut.includes('semantic metadata:'))
+checkTrue('payload has data-testid hint', metaOut.includes('data-testid: submit-btn'))
+checkTrue('payload has data-oe-model hint', metaOut.includes('data-oe-model: res.partner'))
+checkTrue('payload has data-oe-id hint', metaOut.includes('data-oe-id: 42'))
+// Metadata is under UNTRUSTED label
+checkTrue('metadata section is under UNTRUSTED', metaOut.indexOf('UNTRUSTED') < metaOut.indexOf('semantic metadata:'))
+
+// Empty metadata should not add the section
+const noMetaAnn = { id: 'ann_nometa', note: 'test', target: { selector: '#x', tag: 'div', classes: [] } }
+const noMetaOut = formatAgentPrompt({ annotations: [noMetaAnn], page })
+checkFalse('no metadata section when empty', noMetaOut.includes('semantic metadata:'))
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed')
 if (fail > 0) process.exit(1)

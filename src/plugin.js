@@ -166,6 +166,7 @@ const ANNOTATION_SCRIPT = `
         classes: Array.from(element.classList || []),
         text: (element.textContent || '').trim().substring(0, 300) || '',
         id: element.id || null,
+        metadata: extractMetadata(element),
         styles: {
           display: styles.display,
           position: styles.position,
@@ -186,6 +187,29 @@ const ANNOTATION_SCRIPT = `
           height: rect.height,
         }
       };
+    }
+
+    function extractMetadata(element) {
+      if (!element || !element.getAttributeNames) return [];
+      var MAX = 20;
+      var MAX_VAL = 200;
+      var prefixes = ['data-testid', 'data-test', 'data-cy', 'data-qa', 'data-oe'];
+      var deny = ['data-password', 'data-token', 'data-secret', 'data-auth', 'data-session', 'data-csrf'];
+      var hints = [];
+      var attrs = element.getAttributeNames().slice(0, MAX);
+      for (var i = 0; i < attrs.length; i++) {
+        var attr = attrs[i];
+        if (deny.indexOf(attr) >= 0) continue;
+        var matched = false;
+        for (var p = 0; p < prefixes.length; p++) {
+          if (attr === prefixes[p] || attr.indexOf(prefixes[p] + '-') === 0) { matched = true; break; }
+        }
+        if (!matched) continue;
+        var val = element.getAttribute(attr);
+        if (val == null) continue;
+        hints.push({ name: attr, value: String(val).substring(0, MAX_VAL) });
+      }
+      return hints;
     }
 
     function handleMouseMove(e) {
@@ -485,6 +509,7 @@ function PreviewPanel() {
         id: selectedElement.id,
         classes: selectedElement.classes,
         text: selectedElement.text,
+        metadata: selectedElement.metadata,
         rect: selectedElement.position,
         styles: selectedElement.styles,
       },

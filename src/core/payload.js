@@ -76,6 +76,12 @@ export function formatAgentPrompt({ annotations, page, session }) {
         }
       }
     }
+    if (Array.isArray(target.metadata) && target.metadata.length > 0) {
+      parts.push('  semantic metadata:')
+      for (const hint of target.metadata.slice(0, LIMITS.metadata)) {
+        parts.push(`    ${hint.name}: ${truncate(hint.value, LIMITS.metadataValue)}`)
+      }
+    }
     parts.push('')
   }
 

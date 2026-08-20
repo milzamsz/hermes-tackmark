@@ -17,6 +17,8 @@ export const LIMITS = {
   styleKeys: ['display', 'position', 'width', 'height', 'backgroundColor',
     'color', 'fontSize', 'fontFamily', 'padding', 'margin', 'borderRadius'],
   note: 2000,
+  metadata: 20,
+  metadataValue: 200,
   annotationsPerBatch: 20,
   totalPrompt: 20000, // 20 KB
 }
@@ -108,6 +110,27 @@ export function validateMessage(data) {
       }
       if (typeof element.styles[key] !== 'string') {
         return { valid: false, reason: `Style value for ${key} must be string` }
+      }
+    }
+  }
+
+  // metadata: optional, must be array of {name, value} with bounded sizes
+  if (element.metadata !== undefined && element.metadata !== null) {
+    if (!Array.isArray(element.metadata)) {
+      return { valid: false, reason: 'metadata must be an array' }
+    }
+    if (element.metadata.length > LIMITS.metadata) {
+      return { valid: false, reason: `Too many metadata hints (${element.metadata.length} > ${LIMITS.metadata})` }
+    }
+    for (const hint of element.metadata) {
+      if (!hint || typeof hint !== 'object') {
+        return { valid: false, reason: 'metadata hint must be an object' }
+      }
+      if (typeof hint.name !== 'string' || hint.name.length > LIMITS.classLength) {
+        return { valid: false, reason: 'metadata name too long or not a string' }
+      }
+      if (typeof hint.value !== 'string' || hint.value.length > LIMITS.metadataValue) {
+        return { valid: false, reason: 'metadata value too long or not a string' }
       }
     }
   }

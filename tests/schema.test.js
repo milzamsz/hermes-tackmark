@@ -68,5 +68,45 @@ checkTrue('has UUID', ann.id.length > 10)
 check('default status', ann.status, 'pending')
 checkTrue('has createdAt', Boolean(ann.createdAt))
 
+console.log('\n--- Metadata validation ---')
+// Valid metadata
+const validMeta = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: [{ name: 'data-testid', value: 'submit-btn' }] } }
+checkTrue('valid metadata accepted', validateMessage(validMeta).valid)
+
+// Multiple metadata hints
+const multiMeta = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: [
+    { name: 'data-testid', value: 'submit-btn' },
+    { name: 'data-oe-model', value: 'res.partner' },
+    { name: 'data-oe-id', value: '42' },
+  ] } }
+checkTrue('multiple metadata accepted', validateMessage(multiMeta).valid)
+
+// Metadata not an array
+const badMeta1 = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: 'not-array' } }
+checkFalse('metadata not array rejected', validateMessage(badMeta1).valid)
+
+// Too many metadata hints
+const tooManyMeta = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: Array(LIMITS.metadata + 1).fill(null).map((_, i) => ({ name: `data-test-${i}`, value: 'x' })) } }
+checkFalse('too many metadata rejected', validateMessage(tooManyMeta).valid)
+
+// Metadata hint not an object
+const badHint = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: ['not-object'] } }
+checkFalse('metadata hint not object rejected', validateMessage(badHint).valid)
+
+// Metadata name not a string
+const badName = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: [{ name: 42, value: 'x' }] } }
+checkFalse('metadata name not string rejected', validateMessage(badName).valid)
+
+// Metadata value too long
+const longMetaVal = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  metadata: [{ name: 'data-testid', value: 'x'.repeat(LIMITS.metadataValue + 1) }] } }
+checkFalse('metadata value too long rejected', validateMessage(longMetaVal).valid)
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed')
 if (fail > 0) process.exit(1)
