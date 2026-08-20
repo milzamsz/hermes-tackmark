@@ -2,6 +2,7 @@
   "name": "hermes-tackmark",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Hardened visual annotation plugin for Hermes Desktop — click elements, annotate, and let AI fix code.",
   "author": "OCloud (fork of freehul/tackmark)",
   "scripts": {
