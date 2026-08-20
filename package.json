@@ -1,11 +1,11 @@
 {
-  "name": "tackmark",
-  "version": "1.0.0",
+  "name": "hermes-tackmark",
+  "version": "0.1.0",
   "private": true,
-  "description": "TackMark — click-to-annotate visual feedback plugin for Hermes Desktop",
-  "author": "freehul",
+  "description": "Hardened visual annotation plugin for Hermes Desktop — click elements, annotate, and let AI fix code.",
+  "author": "OCloud (fork of freehul/tackmark)",
   "scripts": {
-    "test": "node tests/normalize-path.test.js && node tests/security.test.js"
+    "test": "node tests/selectors.test.js && node tests/url-policy.test.js && node tests/schema.test.js && node tests/payload.test.js && node tests/session.test.js && node tests/normalize-path.test.js && node tests/security.test.js"
   },
   "peerDependencies": {
     "react": ">=18",

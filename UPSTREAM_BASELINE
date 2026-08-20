@@ -1,0 +1,7 @@
+repo=https://github.com/freehul/tackmark.git
+# Upstream was provided as a local snapshot (tackmark-main) without git history.
+# The exact upstream commit SHA could not be determined from the snapshot.
+# Baseline recorded as the first commit of this fork.
+commit=upstream-snapshot-2026-08-20
+date=2026-08-20
+fork_baseline=22fd6aa8130997fbe32846f42f1c1a013c830304
