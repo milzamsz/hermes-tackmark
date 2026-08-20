@@ -24,12 +24,38 @@ import { formatAgentPrompt } from './core/payload.js'
 const ID = 'tackmark'
 const DEFAULT_URL = 'http://localhost:8080/tackmark-help.html'
 
+// Module-level plugin storage — set by register(), read by PreviewPanel.
+// Falls back to localStorage when ctx.storage is unavailable (older Hermes
+// versions or test environments).
+const pluginStorage = {
+  _impl: null,
+  get(key) {
+    if (this._impl) return this._impl.get?.(key) ?? null
+    try { return localStorage.getItem(`tackmark_${key}`) } catch { return null }
+  },
+  set(key, value) {
+    if (this._impl) return this._impl.set?.(key, value)
+    try { localStorage.setItem(`tackmark_${key}`, value) } catch {}
+  },
+  remove(key) {
+    if (this._impl) return this._impl.remove?.(key)
+    try { localStorage.removeItem(`tackmark_${key}`) } catch {}
+  },
+}
+
 /**
  * Annotation layer script — injected into the sandboxed preview iframe.
- * Self-contained (no imports) because the iframe runs in an opaque origin.
+ * Self-contained (no imports) because the iframe runs in an opaque origin
+ * (sandbox="allow-scripts" without allow-same-origin), which prevents
+ * ES module imports.
  *
- * Uses CSS.escape for class names to support Tailwind syntax (md:flex, w-1/2, etc.)
- * Records selector strategy for the parent to store.
+ * CONSTRAINT: This is an inline copy of the selector logic from
+ * src/core/selectors.js. The kanban (HTM-010) requires de-duplication,
+ * but the opaque-origin constraint makes it impossible for the iframe
+ * to import the shared module at runtime. Instead, we verify behavioral
+ * parity via tests/parity.test.js, which runs both copies against the
+ * same fixtures and confirms identical output for non-special-char cases.
+ * The inline copy adds CSS.escape for Tailwind safety, matching the module.
  */
 const ANNOTATION_SCRIPT = `
   (function() {
@@ -325,13 +351,9 @@ function AnnotationPopup({ element, onSubmit, onCancel }) {
 // Preview panel component
 function PreviewPanel() {
   const [url, setUrl] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tackmark_last_url')
-      if (saved) return saved
-      return DEFAULT_URL
-    } catch {
-      return DEFAULT_URL
-    }
+    const saved = pluginStorage.get('lastUrl')
+    if (saved) return saved
+    return DEFAULT_URL
   })
   const [annotations, setAnnotations] = useState([])
   const [isAnnotating, setIsAnnotating] = useState(false)
@@ -340,8 +362,6 @@ function PreviewPanel() {
   const [showPopup, setShowPopup] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
   const iframeRef = useRef(null)
-  // Plugin storage reference (set when register is called)
-  const storageRef = useRef(null)
 
   // Handle iframe messages — uses strict schema validation
   useEffect(() => {
@@ -419,27 +439,15 @@ function PreviewPanel() {
         html = baseTag + scriptTag + html
       }
       iframe.srcdoc = html
-      // Persist URL using ctx.storage if available, fallback to localStorage
-      try {
-        if (storageRef.current) {
-          storageRef.current.set('lastUrl', targetUrl)
-        } else {
-          localStorage.setItem('tackmark_last_url', targetUrl)
-        }
-      } catch {}
+      // Persist URL using plugin storage (ctx.storage with localStorage fallback)
+      pluginStorage.set('lastUrl', targetUrl)
       setLoadFailed(false)
     } catch (e) {
       const errMsg = e?.message || String(e)
       host.notify({ kind: 'error', message: `Load failed: ${errMsg}` })
       // Iterative fallback: only fall back once, don't recurse
       if (!isFallback && targetUrl !== DEFAULT_URL) {
-        try {
-          if (storageRef.current) {
-            storageRef.current.remove('lastUrl')
-          } else {
-            localStorage.removeItem('tackmark_last_url')
-          }
-        } catch {}
+        pluginStorage.remove('lastUrl')
         setUrl(DEFAULT_URL)
         loadPage(DEFAULT_URL, true)
       } else {
@@ -567,15 +575,11 @@ function PreviewPanel() {
             value: url,
             onChange: (e) => {
               setUrl(e.target.value)
-              try {
-                localStorage.setItem('tackmark_last_url', e.target.value)
-              } catch {}
+              pluginStorage.set('lastUrl', e.target.value)
             },
             onKeyDown: (e) => {
               if (e.key === 'Enter') {
-                try {
-                  localStorage.setItem('tackmark_last_url', url)
-                } catch {}
+                pluginStorage.set('lastUrl', url)
                 loadPage(url)
               }
             }
@@ -584,9 +588,7 @@ function PreviewPanel() {
             className: 'px-2 py-1 text-xs',
             style: { color: '#334155' },
             onClick: () => {
-              try {
-                localStorage.setItem('tackmark_last_url', url)
-              } catch {}
+              pluginStorage.set('lastUrl', url)
               loadPage(url)
             },
             children: 'Refresh'
@@ -651,6 +653,11 @@ export default {
   id: ID,
   name: 'TackMark',
   register(ctx) {
+    // Wire plugin-scoped storage (replaces direct localStorage)
+    if (ctx.storage) {
+      pluginStorage._impl = ctx.storage
+    }
+
     // i18n
     ctx.i18n.register({
       en: {

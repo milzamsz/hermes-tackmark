@@ -17,6 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: npm install
-      - run: npm test
-      - run: python -m pytest tests/test_server.py -v
+      - name: Node tests
+        run: npm test
+      - name: Python server tests
+        run: python -m unittest tests.test_server -v
