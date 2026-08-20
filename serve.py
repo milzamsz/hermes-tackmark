@@ -18,7 +18,7 @@ import os
 import urllib.parse
 import fnmatch
 
-ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else '.'
+ROOT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.abspath('.')
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
 
 # Sensitive file patterns to block (defense-in-depth, not a substitute for correct root)
