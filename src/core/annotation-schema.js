@@ -10,6 +10,9 @@ export const SCHEMA_VERSION = 1
 /** Field limits for untrusted message validation. */
 export const LIMITS = {
   selector: 1000,
+  tag: 64,
+  selectorStrategy: 32,
+  styleValue: 500,
   text: 300,
   outerHTML: 2000,
   contextHTML: 3500,
@@ -27,6 +30,7 @@ export const LIMITS = {
 
 /** Allowed message types from iframe. */
 const ALLOWED_TYPES = ['tackmark-ready', 'tackmark-element-selected', 'tackmark-toggle-annotation']
+const ALLOWED_SELECTOR_STRATEGIES = ['id', 'test-attr', 'classes', 'structural', 'none']
 
 /**
  * Validate a frame message object.
@@ -58,9 +62,18 @@ export function validateMessage(data) {
     return { valid: false, reason: 'Missing element object' }
   }
 
-  // tag must be a non-empty string
-  if (typeof element.tag !== 'string' || element.tag.length === 0) {
-    return { valid: false, reason: 'element.tag must be a string' }
+  // tag must be a non-empty, bounded string
+  if (typeof element.tag !== 'string' || element.tag.length === 0 || element.tag.length > LIMITS.tag) {
+    return { valid: false, reason: 'element.tag must be a bounded string' }
+  }
+
+  // selector strategy is optional but must be a known bounded enum value.
+  if (element.selectorStrategy !== undefined && element.selectorStrategy !== null) {
+    if (typeof element.selectorStrategy !== 'string' ||
+        element.selectorStrategy.length > LIMITS.selectorStrategy ||
+        !ALLOWED_SELECTOR_STRATEGIES.includes(element.selectorStrategy)) {
+      return { valid: false, reason: 'Unknown or oversized selector strategy' }
+    }
   }
 
   // classes must be an array of strings
@@ -119,8 +132,8 @@ export function validateMessage(data) {
       if (!LIMITS.styleKeys.includes(key)) {
         return { valid: false, reason: `Disallowed style key: ${key}` }
       }
-      if (typeof element.styles[key] !== 'string') {
-        return { valid: false, reason: `Style value for ${key} must be string` }
+      if (typeof element.styles[key] !== 'string' || element.styles[key].length > LIMITS.styleValue) {
+        return { valid: false, reason: `Style value for ${key} must be a bounded string` }
       }
     }
   }

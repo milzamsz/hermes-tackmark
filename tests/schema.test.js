@@ -35,6 +35,10 @@ checkFalse('element not object', validateMessage({ type: 'tackmark-element-selec
 checkFalse('tag missing', validateMessage({ type: 'tackmark-element-selected', element: { classes: [] } }).valid)
 checkFalse('tag not string', validateMessage({ type: 'tackmark-element-selected', element: { tag: 42, classes: [] } }).valid)
 checkFalse('classes not array', validateMessage({ type: 'tackmark-element-selected', element: { tag: 'div', classes: 'not-array' } }).valid)
+checkFalse('tag too long', validateMessage({ type: 'tackmark-element-selected', element: { tag: 'x'.repeat(LIMITS.tag + 1), classes: [] } }).valid)
+checkTrue('known selector strategy accepted', validateMessage({ type: 'tackmark-element-selected', element: { tag: 'div', classes: [], selectorStrategy: 'test-attr' } }).valid)
+checkFalse('unknown selector strategy rejected', validateMessage({ type: 'tackmark-element-selected', element: { tag: 'div', classes: [], selectorStrategy: 'invented' } }).valid)
+checkFalse('oversized selector strategy rejected', validateMessage({ type: 'tackmark-element-selected', element: { tag: 'div', classes: [], selectorStrategy: 'x'.repeat(LIMITS.selectorStrategy + 1) } }).valid)
 
 console.log('\n--- Size limits ---')
 // Too many classes
@@ -62,6 +66,8 @@ checkFalse('oversized nearby HTML rejected', validateMessage(longContextHtml).va
 // Disallowed style key
 const badStyle = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [], styles: { evilKey: 'value' } } }
 checkFalse('disallowed style key', validateMessage(badStyle).valid)
+const longStyle = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [], styles: { color: 'x'.repeat(LIMITS.styleValue + 1) } } }
+checkFalse('oversized style value rejected', validateMessage(longStyle).valid)
 
 // Non-finite rect value
 const nanRect = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [], rect: { x: NaN, y: 10, width: 10, height: 10 } } }
