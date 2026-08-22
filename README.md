@@ -9,6 +9,32 @@ Nothing is sent automatically. You review or rewrite the generated draft before 
 [![CI](https://github.com/milzamsz/hermes-tackmark/actions/workflows/ci.yml/badge.svg)](https://github.com/milzamsz/hermes-tackmark/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+## Contents
+
+- [Project status](#project-status)
+- [Upstream credit](#upstream-credit)
+- [Why this fork exists](#why-this-fork-exists)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Window controls](#window-controls)
+- [URL and security model](#url-and-security-model)
+- [Architecture](#architecture)
+- [Development](#development)
+- [CI](#ci)
+- [Troubleshooting](#troubleshooting)
+- [Limitations](#limitations)
+- [Contributing](#contributing)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
+
+## Project status
+
+Hermes TackMark is an independently maintained derivative, not an official Hermes Agent or upstream TackMark project. Version `0.1.0` targets the current Hermes Desktop plugin runtime and is developed publicly at <https://github.com/milzamsz/hermes-tackmark>.
+
+The GitHub repository is not marked as a GitHub-native fork because development started from a source snapshot. Provenance is recorded in [`UPSTREAM_BASELINE`](UPSTREAM_BASELINE), the original remote is configured as `upstream`, and the original MIT copyright notice remains in [`LICENSE`](LICENSE).
+
 ## Upstream credit
 
 Hermes TackMark is a substantially extended derivative of **[freehul/tackmark](https://github.com/freehul/tackmark)**, created by [freehul](https://github.com/freehul).
@@ -139,6 +165,28 @@ cp dist/plugin.js "$HERMES_HOME/desktop-plugins/hermes-tackmark/plugin.js"
 
 Do not copy `src/plugin.js` directly. The source imports local core modules and must be bundled first.
 
+### Update
+
+Pull the latest `main` branch, reinstall dependencies, and rebuild:
+
+```bash
+git pull --ff-only origin main
+npm install
+npm run build
+```
+
+Then run **Reload desktop plugins** from the Hermes Command Palette.
+
+### Uninstall
+
+Remove only the installed plugin directory, then reload desktop plugins:
+
+```bash
+rm -rf "${HERMES_HOME:-$HOME/.hermes}/desktop-plugins/hermes-tackmark"
+```
+
+This does not remove your source checkout. TackMark preferences stored by Hermes may remain in plugin-scoped storage.
+
 ## Quick start
 
 1. Start your local application, for example `npm run dev`.
@@ -250,6 +298,46 @@ Use `npm run bundle:watch` during development. After changing the plugin, use **
 ## CI
 
 GitHub Actions runs the Node test suite and Python static-server tests on pushes and pull requests to `main`. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+## Troubleshooting
+
+### The launcher does not appear
+
+1. Confirm the built file exists at `${HERMES_HOME:-$HOME/.hermes}/desktop-plugins/hermes-tackmark/plugin.js`.
+2. Confirm the directory is named exactly `hermes-tackmark`.
+3. Run **Reload desktop plugins** from the Hermes Command Palette or restart Hermes Desktop.
+4. Re-run `npm run build` and check the installer output for the exact destination.
+
+### A URL is blocked
+
+Use an HTTP or HTTPS loopback URL such as `http://localhost:4321`, `http://127.0.0.1:8080`, or `http://[::1]:3000`. Remote hosts, non-web schemes, and URLs containing credentials are intentionally rejected by the default policy.
+
+### The page does not load correctly
+
+- Verify the application opens in a normal browser first.
+- Confirm the development server is listening on a loopback interface and the displayed port.
+- For plain static files, use `python serve.py /absolute/path/to/site 8080`; do not navigate the webview directly to a `file://` URL.
+- Reload the page after restarting its development server.
+
+### Draft in chat does nothing
+
+- Focus the intended Hermes chat composer before clicking **Draft in chat**.
+- Make sure at least one annotation has been added.
+- If no text appears, reload desktop plugins and retry with the intended chat pane visibly focused.
+- TackMark inserts a draft but never presses Send; this is intentional.
+
+### Screenshots are missing
+
+Screenshot capture is best-effort and depends on Electron `webview.capturePage` support and a visible, non-zero element rectangle. The selector, DOM excerpt, styles, geometry, and metadata remain available when image capture is unavailable.
+
+## Limitations
+
+- TackMark previews web applications only; it does not annotate native desktop UI outside its webview.
+- The default URL policy is loopback-only and exposes no UI for adding remote hosts.
+- Authentication state belongs to the isolated webview session and may differ from your normal browser.
+- Cross-origin frames and closed shadow roots can prevent deep element inspection.
+- Dynamic pages can invalidate a selector after navigation or a substantial rerender; capture a new annotation when that happens.
+- Screenshot attachment and composer insertion depend on the Hermes Desktop plugin APIs available in the installed Hermes version.
 
 ## Contributing
 
