@@ -658,13 +658,42 @@ function PreviewPanel() {
         setLoadError(`Page opened, but annotation injection failed: ${error?.message || error}`)
       }
     }
+    let lastAllowedUrl = ''
+    const initialPolicy = validatePreviewUrl(loadedUrl || '')
+    if (initialPolicy.ok) lastAllowedUrl = initialPolicy.url.href
+
+    const guardNavigation = event => {
+      const nextUrl = event?.url || ''
+      if (!nextUrl || nextUrl === 'about:blank') return true
+      const policy = validatePreviewUrl(nextUrl)
+      if (policy.ok) {
+        lastAllowedUrl = policy.url.href
+        return true
+      }
+      event?.preventDefault?.()
+      setLoadError(`Blocked navigation to ${nextUrl}. TackMark previews loopback URLs only.`)
+      return false
+    }
     const onNavigate = event => {
       const nextUrl = event?.url || webview.getURL?.() || ''
       if (!nextUrl || nextUrl === 'about:blank') return
+      if (!guardNavigation(event)) {
+        webview.stop?.()
+        if (lastAllowedUrl && webview.getURL?.() !== lastAllowedUrl) {
+          webview.loadURL(lastAllowedUrl).catch(() => {})
+        }
+        return
+      }
       setLoadedUrl(nextUrl)
       setUrlInput(nextUrl)
       pluginStorage.set('lastUrl', nextUrl)
       setHistory({ back: webview.canGoBack?.() || false, forward: webview.canGoForward?.() || false })
+    }
+    const onWillNavigate = event => { guardNavigation(event) }
+    const onNewWindow = event => {
+      if (!guardNavigation(event)) return
+      event?.preventDefault?.()
+      webview.loadURL(event.url).catch(() => {})
     }
     const onFail = event => {
       if (event?.errorCode === -3) return
@@ -677,6 +706,8 @@ function PreviewPanel() {
 
     webview.addEventListener('did-start-loading', onStart)
     webview.addEventListener('dom-ready', onReady)
+    webview.addEventListener('will-navigate', onWillNavigate)
+    webview.addEventListener('new-window', onNewWindow)
     webview.addEventListener('did-navigate', onNavigate)
     webview.addEventListener('did-navigate-in-page', onNavigate)
     webview.addEventListener('did-fail-load', onFail)
@@ -714,6 +745,8 @@ function PreviewPanel() {
       window.clearInterval(poll)
       webview.removeEventListener('did-start-loading', onStart)
       webview.removeEventListener('dom-ready', onReady)
+      webview.removeEventListener('will-navigate', onWillNavigate)
+      webview.removeEventListener('new-window', onNewWindow)
       webview.removeEventListener('did-navigate', onNavigate)
       webview.removeEventListener('did-navigate-in-page', onNavigate)
       webview.removeEventListener('did-fail-load', onFail)
