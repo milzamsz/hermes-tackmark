@@ -6,7 +6,7 @@
  * Uses extracted core modules for selector, URL policy, session, schema, payload.
  */
 
-import { host, haptic } from '@hermes/plugin-sdk'
+import { Badge, Button, Codicon, EmptyState, Input, KEYBINDS_AREA, PALETTE_AREA, StatusDot, Tip, host, haptic } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useState, useEffect, useCallback, useRef } from 'react'
 
@@ -17,12 +17,25 @@ export { escapeHtmlAttr } from './core/html.js'
 
 import { validatePreviewUrl } from './core/url-policy.js'
 import { escapeHtmlAttr } from './core/html.js'
-import { getTargetSessionId, checkSendSafety, checkSubmitSuccess } from './core/session.js'
+
 import { validateMessage, createAnnotation } from './core/annotation-schema.js'
 import { formatAgentPrompt } from './core/payload.js'
+import { draftInComposer } from './core/composer-draft.js'
+import { normalizeZoomPercent, stepZoomPercent } from './core/zoom.js'
+import { clampLauncherPosition } from './core/launcher-position.js'
 
-const ID = 'tackmark'
-const DEFAULT_URL = 'http://localhost:8080/tackmark-help.html'
+const ID = 'hermes-tackmark'
+const TOGGLE_SELECTION_EVENT = 'hermes-tackmark:toggle-selection'
+const WINDOW_STATE_EVENT = 'hermes-tackmark:window-state'
+
+function requestToggleSelection() {
+  showFloatingBrowser()
+  window.dispatchEvent(new Event(TOGGLE_SELECTION_EVENT))
+}
+
+function notifyWindowState(minimized) {
+  window.dispatchEvent(new CustomEvent(WINDOW_STATE_EVENT, { detail: { minimized: Boolean(minimized) } }))
+}
 
 // Module-level plugin storage — set by register(), read by PreviewPanel.
 // Falls back to localStorage when ctx.storage is unavailable (older Hermes
@@ -43,11 +56,220 @@ const pluginStorage = {
   },
 }
 
+
+const FLOATING_BROWSER_SELECTOR = '[data-floating-pane$="floating-browser"]'
+const FLOATING_POSITIONS_KEY = 'hermes.desktop.floatingPanes.v1'
+
+function clearLegacyCollapsedState() {
+  try {
+    const state = JSON.parse(localStorage.getItem(FLOATING_POSITIONS_KEY) || '{}')
+    const paneId = `${ID}:floating-browser`
+    if (state[paneId]?.collapsed) {
+      state[paneId] = { ...state[paneId], collapsed: false }
+      localStorage.setItem(FLOATING_POSITIONS_KEY, JSON.stringify(state))
+    }
+  } catch {}
+}
+let maximizedRestore = null
+let minimizedRestoreSize = null
+let launcherDragged = false
+
+function floatingBrowserCard() {
+  return document.querySelector(FLOATING_BROWSER_SELECTOR)
+}
+
+function nativeCollapseButton(card) {
+  return card?.querySelector('header [data-floating-no-drag]') || null
+}
+
+function floatingBrowserExpanded(card) {
+  return !card?.querySelector('.codicon-chevron-up')
+}
+
+function restoreLegacyNativeCollapse(card) {
+  if (!card || floatingBrowserExpanded(card)) return false
+  nativeCollapseButton(card)?.click()
+  return true
+}
+
+function showFloatingBrowser() {
+  const card = floatingBrowserCard()
+  if (!card) return false
+  card.style.display = ''
+  restoreLegacyNativeCollapse(card)
+  if (minimizedRestoreSize) {
+    card.style.width = minimizedRestoreSize.width
+    card.style.height = minimizedRestoreSize.height
+    minimizedRestoreSize = null
+  }
+  pluginStorage.set('windowHidden', 'false')
+  notifyWindowState(false)
+  return true
+}
+
+function hideFloatingBrowser() {
+  const card = floatingBrowserCard()
+  if (!card) return false
+  card.style.display = 'none'
+  pluginStorage.set('windowHidden', 'true')
+  return true
+}
+
+function toggleFloatingBrowser() {
+  const card = floatingBrowserCard()
+  if (!card) return false
+  if (card.style.display === 'none' || minimizedRestoreSize || !floatingBrowserExpanded(card)) return showFloatingBrowser()
+  return hideFloatingBrowser()
+}
+
+function minimizeFloatingBrowser() {
+  const card = floatingBrowserCard()
+  if (!card) return false
+  card.style.display = ''
+  if (!minimizedRestoreSize) {
+    const rect = card.getBoundingClientRect()
+    minimizedRestoreSize = {
+      width: card.style.width || `${rect.width}px`,
+      height: card.style.height || `${rect.height}px`,
+    }
+  }
+  card.style.width = '360px'
+  card.style.height = '220px'
+  notifyWindowState(true)
+  return true
+}
+
+function toggleMaximizeFloatingBrowser() {
+  const card = floatingBrowserCard()
+  if (!card) return false
+  showFloatingBrowser()
+  if (!maximizedRestore) {
+    maximizedRestore = {
+      left: card.style.left,
+      top: card.style.top,
+      width: card.style.width,
+      height: card.style.height,
+    }
+    card.style.left = '8px'
+    card.style.top = '42px'
+    card.style.width = `${Math.max(420, window.innerWidth - 16)}px`
+    card.style.height = `${Math.max(300, window.innerHeight - 50)}px`
+  } else {
+    Object.assign(card.style, maximizedRestore)
+    maximizedRestore = null
+  }
+  return true
+}
+
+function applyStoredFloatingSize() {
+  const card = floatingBrowserCard()
+  if (!card) return
+  try {
+    const size = JSON.parse(pluginStorage.get('windowSize') || 'null')
+    if (size?.width >= 420 && size?.height >= 300) {
+      card.style.width = `${size.width}px`
+      card.style.height = `${size.height}px`
+    }
+  } catch {}
+  const collapse = nativeCollapseButton(card)
+  if (collapse) collapse.style.display = 'none'
+  if (pluginStorage.get('windowHidden') === 'true') card.style.display = 'none'
+}
+
+function beginFloatingResize(event) {
+  const card = floatingBrowserCard()
+  if (!card) return
+  event.preventDefault()
+  event.stopPropagation()
+  showFloatingBrowser()
+  maximizedRestore = null
+  const start = {
+    x: event.clientX,
+    y: event.clientY,
+    width: card.getBoundingClientRect().width,
+    height: card.getBoundingClientRect().height,
+  }
+  const shield = document.createElement('div')
+  shield.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:nwse-resize;'
+  document.body.appendChild(shield)
+  const move = moveEvent => {
+    const maxWidth = Math.max(420, window.innerWidth - card.getBoundingClientRect().left - 8)
+    const maxHeight = Math.max(300, window.innerHeight - card.getBoundingClientRect().top - 8)
+    const width = Math.min(maxWidth, Math.max(420, start.width + moveEvent.clientX - start.x))
+    const height = Math.min(maxHeight, Math.max(300, start.height + moveEvent.clientY - start.y))
+    card.style.width = `${Math.round(width)}px`
+    card.style.height = `${Math.round(height)}px`
+  }
+  const stop = () => {
+    shield.removeEventListener('pointermove', move)
+    shield.removeEventListener('pointerup', stop)
+    shield.remove()
+    const rect = card.getBoundingClientRect()
+    pluginStorage.set('windowSize', JSON.stringify({ width: Math.round(rect.width), height: Math.round(rect.height) }))
+  }
+  shield.addEventListener('pointermove', move)
+  shield.addEventListener('pointerup', stop)
+}
+
+
+
+function applyStoredLauncherPosition(card) {
+  if (!card) return
+  let stored = null
+  try { stored = JSON.parse(pluginStorage.get('launcherPosition') || 'null') } catch {}
+  const current = card.getBoundingClientRect()
+  const position = clampLauncherPosition(
+    stored || { x: current.left, y: current.top },
+    { width: window.innerWidth, height: window.innerHeight, top: 34 },
+    { width: 44, height: 44 },
+  )
+  card.style.left = `${position.x}px`
+  card.style.top = `${position.y}px`
+}
+
+function beginLauncherDrag(event) {
+  const card = event.currentTarget?.closest('[data-floating-pane]')
+  if (!card) return
+  event.stopPropagation()
+  launcherDragged = false
+  const rect = card.getBoundingClientRect()
+  const start = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
+  const shield = document.createElement('div')
+  shield.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:grabbing;'
+  document.body.appendChild(shield)
+  const move = moveEvent => {
+    const dx = moveEvent.clientX - start.x
+    const dy = moveEvent.clientY - start.y
+    if (Math.abs(dx) + Math.abs(dy) > 4) launcherDragged = true
+    const position = clampLauncherPosition(
+      { x: start.left + dx, y: start.top + dy },
+      { width: window.innerWidth, height: window.innerHeight, top: 34 },
+      { width: 44, height: 44 },
+    )
+    card.style.left = `${position.x}px`
+    card.style.top = `${position.y}px`
+  }
+  const stop = () => {
+    shield.removeEventListener('pointermove', move)
+    shield.removeEventListener('pointerup', stop)
+    shield.remove()
+    const finalRect = card.getBoundingClientRect()
+    pluginStorage.set('launcherPosition', JSON.stringify({ x: Math.round(finalRect.left), y: Math.round(finalRect.top) }))
+    if (!launcherDragged) {
+      haptic('tap')
+      toggleFloatingBrowser()
+    }
+    launcherDragged = false
+  }
+  shield.addEventListener('pointermove', move)
+  shield.addEventListener('pointerup', stop)
+}
+
+
 /**
- * Annotation layer script — injected into the sandboxed preview iframe.
- * Self-contained (no imports) because the iframe runs in an opaque origin
- * (sandbox="allow-scripts" without allow-same-origin), which prevents
- * ES module imports.
+ * Annotation layer script — injected into Electron's isolated preview webview.
+ * Self-contained because executeJavaScript runs it inside the guest page; the
+ * embedder reads a bounded message queue through the same isolated channel.
  *
  * CONSTRAINT: This is an inline copy of the selector logic from
  * src/core/selectors.js. The kanban (HTM-010) requires de-duplication,
@@ -59,6 +281,9 @@ const pluginStorage = {
  */
 const ANNOTATION_SCRIPT = `
   (function() {
+    if (window.__tackmarkInstalled) return;
+    window.__tackmarkInstalled = true;
+    window.__tackmarkQueue = [];
     let isAnnotating = false;
     let overlay = null;
     let tooltip = null;
@@ -165,6 +390,8 @@ const ANNOTATION_SCRIPT = `
         tag: element.tagName.toLowerCase(),
         classes: Array.from(element.classList || []),
         text: (element.textContent || '').trim().substring(0, 300) || '',
+        outerHTML: (element.outerHTML || '').substring(0, 2000),
+        contextHTML: (element.parentElement && element.parentElement.outerHTML || '').substring(0, 3500),
         id: element.id || null,
         metadata: extractMetadata(element),
         styles: {
@@ -193,7 +420,7 @@ const ANNOTATION_SCRIPT = `
       if (!element || !element.getAttributeNames) return [];
       var MAX = 20;
       var MAX_VAL = 200;
-      var prefixes = ['data-testid', 'data-test', 'data-cy', 'data-qa', 'data-oe'];
+      var prefixes = ['data-testid', 'data-test', 'data-cy', 'data-qa', 'data-oe', 'data-astro', 'data-source', 'data-file', 'data-line'];
       var deny = ['data-password', 'data-token', 'data-secret', 'data-auth', 'data-session', 'data-csrf'];
       var hints = [];
       var attrs = element.getAttributeNames().slice(0, MAX);
@@ -228,7 +455,7 @@ const ANNOTATION_SCRIPT = `
       var selResult = generateSelector(element);
       var info = inspectElement(element);
 
-      window.parent.postMessage({
+      window.__tackmarkQueue.push({
         type: 'tackmark-element-selected',
         element: {
           selector: selResult.selector,
@@ -236,53 +463,24 @@ const ANNOTATION_SCRIPT = `
           ...info,
           mouse: { x: e.clientX, y: e.clientY }
         }
-      }, '*');
+      });
     }
 
-    window.addEventListener('message', function(event) {
-      if (event.data && event.data.type === 'tackmark-toggle-annotation') {
-        isAnnotating = event.data.enabled;
-        if (isAnnotating && !overlay) {
-          createOverlay();
-        }
-        if (!isAnnotating && overlay) {
-          overlay.style.display = 'none';
-          tooltip.style.display = 'none';
-        } else if (isAnnotating && overlay) {
-          overlay.style.display = 'block';
-          tooltip.style.display = 'block';
-        }
-      }
-    });
-
-    // Design-preview auto-fit (preserved from upstream)
-    var fitW = 0, fitH = 0;
-    function fitPreview() {
-      var docEl = document.documentElement;
-      if (!fitW || !fitH) {
-        fitW = docEl.scrollWidth || 0;
-        fitH = docEl.scrollHeight || 0;
-      }
-      if (!fitW || !fitH) return;
-      var scale = Math.min(window.innerWidth / fitW, window.innerHeight / fitH);
-      // Guard against zero/negative scale (blank page or display:none)
-      if (!isFinite(scale) || scale <= 0) return;
-      var zoom = Math.min(scale, 1);
-      docEl.style.zoom = zoom < 1 ? String(zoom) : '';
-      document.body.style.overflowX = 'hidden';
-    }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', fitPreview);
-    } else {
-      fitPreview();
-    }
-    window.addEventListener('load', fitPreview);
-    window.addEventListener('resize', fitPreview);
+    window.__tackmarkSetEnabled = function(enabled) {
+      isAnnotating = Boolean(enabled);
+      if (isAnnotating && !overlay) createOverlay();
+      if (overlay) overlay.style.display = isAnnotating ? 'block' : 'none';
+      if (tooltip) tooltip.style.display = isAnnotating ? 'block' : 'none';
+      return isAnnotating;
+    };
 
     document.addEventListener('mousemove', handleMouseMove, true);
     document.addEventListener('click', handleClick, true);
-
-    window.parent.postMessage({ type: 'tackmark-ready' }, '*');
+    document.addEventListener('wheel', function(event) {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      window.__tackmarkQueue.push({ type: 'tackmark-zoom', deltaY: event.deltaY });
+    }, { capture: true, passive: false });
   })();
 `
 
@@ -292,231 +490,344 @@ function AnnotationPopup({ element, onSubmit, onCancel }) {
   const inputRef = useRef(null)
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus()
-    }
+    inputRef.current?.focus()
   }, [])
 
   const handleSubmit = () => {
-    if (comment.trim()) {
-      onSubmit(comment)
-    }
+    const note = comment.trim()
+    if (note) onSubmit(note)
   }
 
-  // Popup positioning: follow mouse, clamp to iframe viewport
   const pos = element.popupPosition || element.position || { x: 0, y: 0 }
-  const popupWidth = 260
-  const popupHeight = 160
+  const popupWidth = 320
+  const popupHeight = 150
   const bound = element.viewportBounds
     || { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
   let left = pos.x + 12
   let top = pos.y + 16
-  if (left + popupWidth > bound.right - 4) {
-    left = pos.x - popupWidth - 12
-  }
-  if (left < bound.left + 4) left = bound.left + 4
-  if (top + popupHeight > bound.bottom - 4) {
-    top = pos.y - popupHeight - 12
-  }
-  if (top < bound.top + 4) top = bound.top + 4
+  if (left + popupWidth > bound.right - 8) left = pos.x - popupWidth - 12
+  if (left < bound.left + 8) left = bound.left + 8
+  if (top + popupHeight > bound.bottom - 8) top = pos.y - popupHeight - 12
+  if (top < bound.top + 8) top = bound.top + 8
+
+  const identity = element.id
+    ? `${element.tag}#${element.id}`
+    : element.classes?.length
+      ? `${element.tag}.${element.classes.slice(0, 2).join('.')}`
+      : element.tag
 
   return jsxs('div', {
-    className: 'fixed z-[9999] rounded-lg shadow-xl p-3 min-w-[250px]',
-    style: {
-      top: `${top}px`,
-      left: `${left}px`,
-      background: 'var(--ui-bg-elevated)',
-      color: 'var(--ui-text-primary)',
-      border: '1px solid var(--ui-stroke-secondary)',
-    },
-    onClick: (e) => e.stopPropagation(),
+    className: 'fixed z-[9999] w-80 rounded-md border border-border/70 bg-background p-3 shadow-xl',
+    style: { top: `${top}px`, left: `${left}px` },
+    onClick: event => event.stopPropagation(),
     children: [
       jsx('div', {
-        className: 'text-xs mb-2 break-all',
-        style: { color: 'var(--ui-accent-secondary)' },
-        children: `${element.tag} ${element.classes.map(c => `.${c}`).join('')}`
+        className: 'mb-1 text-xs font-medium text-foreground',
+        children: 'Describe the change',
       }),
-      jsx('input', {
+      jsx('div', {
+        className: 'mb-2 truncate font-mono text-[0.6875rem] text-muted-foreground',
+        title: element.selector || identity,
+        children: identity,
+      }),
+      jsx(Input, {
         ref: inputRef,
-        type: 'text',
-        className: 'w-full px-2 py-1.5 border rounded text-sm mb-2 focus:outline-none focus:ring-2',
-        style: {
-          background: 'var(--ui-bg-input)',
-          color: 'var(--ui-text-primary)',
-          border: '1px solid var(--ui-stroke-tertiary)',
-        },
-        placeholder: 'Add annotation...',
+        size: 'sm',
+        className: 'w-full',
+        placeholder: 'What should change?',
         value: comment,
-        onChange: (e) => setComment(e.target.value),
-        onKeyDown: (e) => {
-          if (e.key === 'Enter') handleSubmit()
-          if (e.key === 'Escape') onCancel()
-        }
+        onChange: event => setComment(event.target.value),
+        onKeyDown: event => {
+          if (event.key === 'Enter') handleSubmit()
+          if (event.key === 'Escape') onCancel()
+        },
       }),
       jsxs('div', {
-        className: 'flex justify-end gap-2',
+        className: 'mt-3 flex justify-end gap-1.5',
         children: [
-          jsx('button', {
-            className: 'px-2 py-1 text-xs',
-            style: { color: 'var(--ui-text-secondary)' },
+          jsx(Button, {
+            variant: 'text',
+            size: 'sm',
             onClick: onCancel,
-            children: 'Cancel'
+            children: 'Cancel',
           }),
-          jsx('button', {
-            className: 'px-2 py-1 text-xs rounded',
-            style: { background: 'var(--ui-green)', color: 'var(--ui-text-primary)' },
+          jsx(Button, {
+            variant: 'default',
+            size: 'sm',
+            disabled: !comment.trim(),
             onClick: handleSubmit,
-            children: 'Add'
-          })
-        ]
-      })
-    ]
+            children: 'Add feedback',
+          }),
+        ],
+      }),
+    ],
   })
 }
 
 // Preview panel component
 function PreviewPanel() {
-  // `loadedUrl` is the URL currently loaded in the iframe (or being loaded).
-  // `urlInput` is the text the user is typing in the input field.
-  // Separating these prevents partial typing from being persisted or used
-  // in annotation payloads, and lets us show a "loading" indicator.
-  const [loadedUrl, setLoadedUrl] = useState(() => {
-    const saved = pluginStorage.get('lastUrl')
-    if (saved) return saved
-    return DEFAULT_URL
-  })
+  const [loadedUrl, setLoadedUrl] = useState(() => pluginStorage.get('lastUrl') || '')
   const [urlInput, setUrlInput] = useState(loadedUrl)
+  const [history, setHistory] = useState({ back: false, forward: false })
+  const [zoomPercent, setZoomPercent] = useState(() =>
+    normalizeZoomPercent(pluginStorage.get('zoomPercent'), 100)
+  )
+  const zoomPercentRef = useRef(zoomPercent)
   const [annotations, setAnnotations] = useState([])
   const [isAnnotating, setIsAnnotating] = useState(false)
   const isAnnotatingRef = useRef(false)
   const [selectedElement, setSelectedElement] = useState(null)
   const [showPopup, setShowPopup] = useState(false)
-  const [loadFailed, setLoadFailed] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const iframeRef = useRef(null)
+  const [annotationReady, setAnnotationReady] = useState(false)
+  const annotationReadyRef = useRef(false)
+  const [loadError, setLoadError] = useState('')
+  const [windowMinimized, setWindowMinimized] = useState(false)
+  const previewHostRef = useRef(null)
+  const webviewRef = useRef(null)
 
-  // Handle iframe messages — uses strict schema validation
+  const applyAnnotationMode = useCallback(async enabled => {
+    const webview = webviewRef.current
+    if (!webview?.executeJavaScript) return false
+    try {
+      return Boolean(await webview.executeJavaScript(
+        `window.__tackmarkSetEnabled ? window.__tackmarkSetEnabled(${Boolean(enabled)}) : false`
+      ))
+    } catch {
+      return false
+    }
+  }, [])
+
+  const handleSelectedElement = useCallback(element => {
+    const webview = webviewRef.current
+    if (!webview) return
+    const result = validateMessage({ type: 'tackmark-element-selected', element })
+    if (!result.valid) return
+    const rect = webview.getBoundingClientRect()
+    const selected = result.element
+    selected.popupPosition = {
+      x: rect.left + (selected.mouse?.x ?? selected.position.x),
+      y: rect.top + (selected.mouse?.y ?? selected.position.y),
+    }
+    selected.viewportBounds = {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+    }
+    setSelectedElement(selected)
+    setShowPopup(true)
+  }, [])
+
   useEffect(() => {
-    const handleMessage = (event) => {
-      const iframe = iframeRef.current
-      if (!iframe || event.source !== iframe.contentWindow) return
+    const update = event => setWindowMinimized(Boolean(event.detail?.minimized))
+    window.addEventListener(WINDOW_STATE_EVENT, update)
+    return () => window.removeEventListener(WINDOW_STATE_EVENT, update)
+  }, [])
 
-      // Validate message through schema
-      const result = validateMessage(event.data)
-      if (!result.valid) return
+  useEffect(() => {
+    const hostElement = previewHostRef.current
+    if (!hostElement) return
 
-      if (result.type === 'tackmark-ready') {
-        if (isAnnotatingRef.current) {
-          iframe.contentWindow.postMessage({
-            type: 'tackmark-toggle-annotation',
-            enabled: true
-          }, '*')
-        }
-        return
-      }
+    const webview = document.createElement('webview')
+    webview.className = 'h-full w-full flex-1 bg-transparent'
+    webview.setAttribute('partition', 'persist:hermes-preview')
+    webview.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes')
+    webview.setAttribute('src', loadedUrl || 'about:blank')
 
-      if (result.type === 'tackmark-element-selected') {
-        const element = result.element
-        // Coordinate conversion: iframe-local → parent window
-        const rect = iframe.getBoundingClientRect()
-        element.popupPosition = {
-          x: rect.left + (element.mouse?.x ?? element.position.x),
-          y: rect.top + (element.mouse?.y ?? element.position.y)
-        }
-        element.viewportBounds = {
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom
-        }
-        setSelectedElement(element)
-        setShowPopup(true)
+    const onStart = () => {
+      setIsLoading(true)
+      setLoadError('')
+      annotationReadyRef.current = false
+      setAnnotationReady(false)
+    }
+    const onReady = async () => {
+      setIsLoading(false)
+      try {
+        await webview.executeJavaScript(ANNOTATION_SCRIPT)
+        setHistory({ back: webview.canGoBack?.() || false, forward: webview.canGoForward?.() || false })
+        webview.setZoomFactor?.(zoomPercentRef.current / 100)
+        annotationReadyRef.current = true
+        setAnnotationReady(true)
+        await webview.executeJavaScript(
+          `window.__tackmarkSetEnabled && window.__tackmarkSetEnabled(${Boolean(isAnnotatingRef.current)})`
+        )
+      } catch (error) {
+        annotationReadyRef.current = false
+        setAnnotationReady(false)
+        setLoadError(`Page opened, but annotation injection failed: ${error?.message || error}`)
       }
     }
+    const onNavigate = event => {
+      const nextUrl = event?.url || webview.getURL?.() || ''
+      if (!nextUrl || nextUrl === 'about:blank') return
+      setLoadedUrl(nextUrl)
+      setUrlInput(nextUrl)
+      pluginStorage.set('lastUrl', nextUrl)
+      setHistory({ back: webview.canGoBack?.() || false, forward: webview.canGoForward?.() || false })
+    }
+    const onFail = event => {
+      if (event?.errorCode === -3) return
+      setIsLoading(false)
+      annotationReadyRef.current = false
+      setAnnotationReady(false)
+      const failedUrl = event?.validatedURL || urlInput || 'the page'
+      setLoadError(`Unable to connect to ${failedUrl}. Check that the local dev server is running.`)
+    }
 
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [])
+    webview.addEventListener('did-start-loading', onStart)
+    webview.addEventListener('dom-ready', onReady)
+    webview.addEventListener('did-navigate', onNavigate)
+    webview.addEventListener('did-navigate-in-page', onNavigate)
+    webview.addEventListener('did-fail-load', onFail)
+    hostElement.replaceChildren(webview)
+    webviewRef.current = webview
+    window.setTimeout(applyStoredFloatingSize, 0)
 
-  // Initial load
-  useEffect(() => {
-    loadPage(loadedUrl)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
-  // Load page: fetch HTML → inject annotation script → srcdoc
-  // If fetch fails (CORS), fall back to iframe.src with allow-same-origin
-  // so the page loads with its resources. Annotation won't work in that
-  // mode, but at least the page is visible.
-  // Iterative fallback (no recursive self-healing)
-  const loadPage = useCallback(async (targetUrl, isFallback = false) => {
-    const iframe = iframeRef.current
-    if (!iframe) return
+    const poll = window.setInterval(async () => {
+      if (!webview.executeJavaScript || !annotationReadyRef.current) return
+      try {
+        const messages = await webview.executeJavaScript(
+          `(() => { const q = window.__tackmarkQueue || []; return q.splice(0, q.length); })()`
+        )
+        if (Array.isArray(messages)) {
+          for (const message of messages) {
+            if (message?.type === 'tackmark-zoom') {
+              const next = stepZoomPercent(zoomPercentRef.current, message.deltaY < 0 ? 1 : -1)
+              zoomPercentRef.current = next
+              setZoomPercent(next)
+              pluginStorage.set('zoomPercent', String(next))
+              webview.setZoomFactor?.(next / 100)
+              continue
+            }
+            const result = validateMessage(message)
+            if (result.valid && result.type === 'tackmark-element-selected') {
+              handleSelectedElement(result.element)
+            }
+          }
+        }
+      } catch {}
+    }, 160)
 
-    // URL validation: parsed local-first policy
-    const policy = validatePreviewUrl(targetUrl)
-    if (!policy.ok) {
-      host.notify({ kind: 'error', message: policy.reason })
+    return () => {
+      window.clearInterval(poll)
+      webview.removeEventListener('did-start-loading', onStart)
+      webview.removeEventListener('dom-ready', onReady)
+      webview.removeEventListener('did-navigate', onNavigate)
+      webview.removeEventListener('did-navigate-in-page', onNavigate)
+      webview.removeEventListener('did-fail-load', onFail)
+      hostElement.replaceChildren()
+      webviewRef.current = null
+    }
+  }, [handleSelectedElement])
+
+  const loadPage = useCallback(targetUrl => {
+    const input = String(targetUrl || '').trim()
+    if (!input) {
+      setLoadedUrl('')
+      setUrlInput('')
+      setLoadError('')
+      annotationReadyRef.current = false
+      setAnnotationReady(false)
+      pluginStorage.remove('lastUrl')
+      webviewRef.current?.loadURL?.('about:blank')
       return
     }
-
+    const normalized = /^[a-z][a-z0-9+.-]*:/i.test(input) ? input : `http://${input}`
+    const policy = validatePreviewUrl(normalized)
+    if (!policy.ok) {
+      setLoadError(policy.reason)
+      return
+    }
+    setLoadError('')
     setIsLoading(true)
-
-    try {
-      const cacheBust = targetUrl.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`
-      const res = await fetch(targetUrl + cacheBust)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      let html = await res.text()
-      const baseUrl = escapeHtmlAttr(targetUrl.replace(/[^/]*$/, ''))
-      const baseTag = `<base href="${baseUrl}">`
-      const scriptTag = `<script>${ANNOTATION_SCRIPT}<\/script>`
-      if (/<\/head>/i.test(html)) {
-        html = html.replace(/<\/head>/i, `${baseTag}${scriptTag}</head>`)
-      } else {
-        html = baseTag + scriptTag + html
-      }
-      iframe.srcdoc = html
-      // Switch to sandbox with allow-scripts only (annotation works)
-      iframe.sandbox = 'allow-scripts'
-      // Persist the loaded URL
-      pluginStorage.set('lastUrl', targetUrl)
-      setLoadedUrl(targetUrl)
-      setUrlInput(targetUrl)
-      setLoadFailed(false)
-    } catch (e) {
-      // Fetch failed (likely CORS). Fall back to loading the URL directly
-      // in the iframe with allow-same-origin so resources load. Annotation
-      // mode won't work in this fallback, but the page is at least visible.
-      iframe.sandbox = 'allow-scripts allow-same-origin'
-      iframe.src = targetUrl
-      pluginStorage.set('lastUrl', targetUrl)
-      setLoadedUrl(targetUrl)
-      setUrlInput(targetUrl)
-      setLoadFailed(true)
-      host.notify({ kind: 'warning', message: `Loaded directly (annotation disabled): ${e?.message || e}` })
-    } finally {
+    setLoadedUrl(policy.url.href)
+    setUrlInput(policy.url.href)
+    pluginStorage.set('lastUrl', policy.url.href)
+    const webview = webviewRef.current
+    if (!webview?.loadURL) {
       setIsLoading(false)
+      setLoadError('Preview webview is not ready. Reload desktop plugins and try again.')
+      return
+    }
+    webview.loadURL(policy.url.href).catch(error => {
+      setIsLoading(false)
+      setLoadError(`Unable to connect to ${policy.url.href}. Check that the local dev server is running.`)
+    })
+  }, [])
+
+  const reloadPage = useCallback(() => {
+    const webview = webviewRef.current
+    if (webview?.reload) {
+      setLoadError('')
+      webview.reload()
+    } else if (loadedUrl) {
+      loadPage(loadedUrl)
+    }
+  }, [loadPage, loadedUrl])
+
+  const toggleAnnotation = useCallback(async () => {
+    const next = !isAnnotatingRef.current
+    if (!annotationReadyRef.current) {
+      host.notify({ kind: 'warning', message: 'Open a page and wait for annotation mode to become ready.' })
+      return
+    }
+    const applied = await applyAnnotationMode(next)
+    if (!applied && next) {
+      host.notify({ kind: 'error', message: 'Could not enable annotation mode on this page.' })
+      return
+    }
+    isAnnotatingRef.current = next
+    setIsAnnotating(next)
+    haptic('tap')
+  }, [applyAnnotationMode])
+
+  useEffect(() => {
+    const toggle = () => { void toggleAnnotation() }
+    window.addEventListener(TOGGLE_SELECTION_EVENT, toggle)
+    return () => window.removeEventListener(TOGGLE_SELECTION_EVENT, toggle)
+  }, [toggleAnnotation])
+
+  const setPageZoom = useCallback(nextValue => {
+    const next = normalizeZoomPercent(nextValue, 100)
+    zoomPercentRef.current = next
+    setZoomPercent(next)
+    pluginStorage.set('zoomPercent', String(next))
+    webviewRef.current?.setZoomFactor?.(next / 100)
+  }, [])
+
+  const zoomOut = useCallback(() => setPageZoom(stepZoomPercent(zoomPercentRef.current, -1)), [setPageZoom])
+  const zoomIn = useCallback(() => setPageZoom(stepZoomPercent(zoomPercentRef.current, 1)), [setPageZoom])
+  const resetZoom = useCallback(() => setPageZoom(100), [setPageZoom])
+  const handleHostWheel = useCallback(event => {
+    if (!event.ctrlKey && !event.metaKey) return
+    event.preventDefault()
+    setPageZoom(stepZoomPercent(zoomPercentRef.current, event.deltaY < 0 ? 1 : -1))
+  }, [setPageZoom])
+
+  const captureElementScreenshot = useCallback(async element => {
+    const webview = webviewRef.current
+    const rect = element?.position
+    if (!webview?.capturePage || !rect || rect.width <= 0 || rect.height <= 0) return null
+    try {
+      const image = await webview.capturePage({
+        x: Math.max(0, Math.floor(rect.x - 8)),
+        y: Math.max(0, Math.floor(rect.y - 8)),
+        width: Math.max(1, Math.ceil(rect.width + 16)),
+        height: Math.max(1, Math.ceil(rect.height + 16)),
+      })
+      if (!image || image.isEmpty?.()) return null
+      const response = await fetch(image.toDataURL())
+      return await response.blob()
+    } catch {
+      return null
     }
   }, [])
 
-  const toggleAnnotation = useCallback(() => {
-    const newState = !isAnnotating
-    setIsAnnotating(newState)
-    isAnnotatingRef.current = newState
-
-    const iframe = iframeRef.current
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.postMessage({
-        type: 'tackmark-toggle-annotation',
-        enabled: newState
-      }, '*')
-    }
-  }, [isAnnotating])
-
-  // Add annotation — uses UUID-based createAnnotation
-  const handleAddAnnotation = useCallback((comment) => {
+  const handleAddAnnotation = useCallback(async comment => {
     if (!selectedElement) return
-
+    const screenshot = await captureElementScreenshot(selectedElement)
     const newAnnotation = createAnnotation({
       page: { url: loadedUrl },
       target: {
@@ -526,182 +837,307 @@ function PreviewPanel() {
         id: selectedElement.id,
         classes: selectedElement.classes,
         text: selectedElement.text,
+        outerHTML: selectedElement.outerHTML,
+        contextHTML: selectedElement.contextHTML,
         metadata: selectedElement.metadata,
         rect: selectedElement.position,
         styles: selectedElement.styles,
       },
       note: comment,
+      screenshot,
     })
-
-    setAnnotations(prev => [...prev, newAnnotation])
+    setAnnotations(previous => [...previous, newAnnotation])
     setShowPopup(false)
     setSelectedElement(null)
-
     haptic('success')
     host.notify({ kind: 'success', message: 'Annotation added' })
-  }, [selectedElement, loadedUrl])
+  }, [captureElementScreenshot, selectedElement, loadedUrl])
 
-  // Send annotations to agent — uses focused session + streaming success detection
-  const sendToAgent = useCallback(async () => {
-    const pending = annotations.filter(a => a.status === 'pending')
-
-    if (pending.length === 0) {
-      host.notify({ kind: 'warning', message: 'No pending annotations' })
+  const draftToChat = useCallback(() => {
+    const pending = annotations.filter(annotation => annotation.status === 'pending')
+    if (pending.length === 0) return
+    const text = formatAgentPrompt({ annotations: pending, page: { url: loadedUrl } })
+    const images = pending.map(annotation => annotation.screenshot).filter(Boolean)
+    if (!draftInComposer(text, images)) {
+      host.notify({ kind: 'error', message: 'Could not create a Hermes chat draft.' })
       return
     }
-
-    // Check send safety: focused session + not busy
-    const safety = checkSendSafety(host)
-    if (!safety.safe) {
-      host.notify({ kind: 'error', message: safety.reason })
-      return
-    }
-
-    // Mark as sending
-    setAnnotations(prev => prev.map(a =>
-      a.status === 'pending' ? { ...a, status: 'sending' } : a
+    setAnnotations(previous => previous.map(annotation =>
+      annotation.status === 'pending' ? { ...annotation, status: 'drafted' } : annotation
     ))
-
-    try {
-      // Format structured payload with untrusted-content framing
-      const text = formatAgentPrompt({
-        annotations: pending,
-        page: { url: loadedUrl },
-        session: { id: safety.sessionId },
-      })
-
-      const result = await host.request('prompt.submit', {
-        session_id: safety.sessionId,
-        text
-      })
-
-      // Check success against actual streaming contract
-      const submitResult = checkSubmitSuccess(result)
-      if (submitResult.success) {
-        setAnnotations(prev => prev.map(a =>
-          a.status === 'sending' ? { ...a, status: 'sent' } : a
-        ))
-        host.notify({ kind: 'success', message: `Sent ${pending.length} annotation(s)` })
-      } else {
-        setAnnotations(prev => prev.map(a =>
-          a.status === 'sending' ? { ...a, status: 'error' } : a
-        ))
-        host.notify({ kind: 'error', message: 'Send failed: ' + submitResult.reason })
-      }
-    } catch (error) {
-      setAnnotations(prev => prev.map(a =>
-        a.status === 'sending' ? { ...a, status: 'error' } : a
-      ))
-      host.notify({ kind: 'error', message: 'Send failed: ' + error.message })
-    }
+    haptic('success')
+    host.notify({
+      kind: 'success',
+      message: `Drafted ${pending.length} annotation(s) in chat — edit and send when ready.`,
+    })
   }, [annotations, loadedUrl])
 
   const clearAnnotations = useCallback(() => {
     setAnnotations([])
-    host.notify({ kind: 'info', message: 'Cleared all annotations' })
+    setShowPopup(false)
+    setSelectedElement(null)
   }, [])
 
-  const pendingCount = annotations.filter(a => a.status === 'pending').length
+  const goBack = useCallback(() => {
+    const webview = webviewRef.current
+    if (webview?.canGoBack?.()) webview.goBack?.()
+  }, [])
+
+  const goForward = useCallback(() => {
+    const webview = webviewRef.current
+    if (webview?.canGoForward?.()) webview.goForward?.()
+  }, [])
+
+  const pendingCount = annotations.filter(annotation => annotation.status === 'pending').length
 
   return jsxs('div', {
-    className: 'flex h-full flex-col',
+    className: 'flex h-full min-h-0 flex-col bg-background',
+    onWheel: handleHostWheel,
     children: [
-      // Toolbar
       jsxs('div', {
-        className: 'flex items-center gap-2 p-2 border-b',
-        style: {
-          borderColor: 'var(--ui-stroke-secondary)',
-          background: 'var(--ui-bg-chrome)',
-        },
-        children: [
-          jsx('input', {
-            type: 'text',
-            className: 'flex-1 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-2',
-            style: {
-              borderColor: 'var(--ui-stroke-tertiary)',
-              background: 'var(--ui-bg-input)',
-              color: 'var(--ui-text-primary)',
-            },
-            placeholder: 'http://localhost:3000',
+        className: 'flex h-9 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2',
+        children: windowMinimized ? [
+          jsx('span', {
+            className: 'min-w-0 flex-1 truncate px-1 text-[0.6875rem] font-medium text-foreground',
+            children: 'TackMark — compact',
+          }),
+          jsx(Tip, {
+            label: 'Restore browser',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              onClick: showFloatingBrowser,
+              children: jsx(Codicon, { name: 'chrome-restore' }),
+            }),
+          }),
+          jsx(Tip, {
+            label: 'Hide browser',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              onClick: hideFloatingBrowser,
+              children: jsx(Codicon, { name: 'close' }),
+            }),
+          }),
+        ] : [
+          jsx(Tip, {
+            label: 'Back',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              disabled: !history.back,
+              onClick: goBack,
+              children: jsx(Codicon, { name: 'arrow-left' }),
+            }),
+          }),
+          jsx(Tip, {
+            label: 'Forward',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              disabled: !history.forward,
+              onClick: goForward,
+              children: jsx(Codicon, { name: 'arrow-right' }),
+            }),
+          }),
+          jsx(Tip, {
+            label: 'Reload',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              disabled: !loadedUrl || isLoading,
+              onClick: reloadPage,
+              children: jsx(Codicon, { name: 'refresh', spinning: isLoading }),
+            }),
+          }),
+          jsx(Input, {
+            size: 'sm',
+            containerClassName: 'min-w-0 flex-1 bg-(--ui-bg-secondary)',
+            className: 'font-mono text-[0.6875rem]',
+            prefix: jsx(Codicon, { name: 'globe', className: 'text-muted-foreground' }),
+            suffix: jsx(Tip, {
+              label: annotationReady ? 'Annotation ready' : isLoading ? 'Loading page' : 'No page loaded',
+              children: jsx(StatusDot, { tone: annotationReady ? 'good' : isLoading ? 'warn' : 'muted' }),
+            }),
+            placeholder: 'localhost:4321',
             value: urlInput,
-            onChange: (e) => setUrlInput(e.target.value),
-            onKeyDown: (e) => {
-              if (e.key === 'Enter') {
-                loadPage(urlInput.trim())
-              }
-            }
+            onChange: event => setUrlInput(event.target.value),
+            onKeyDown: event => { if (event.key === 'Enter') loadPage(urlInput) },
+            'aria-label': 'Preview URL',
           }),
-          jsx('button', {
-            className: 'px-2 py-1 text-xs rounded',
-            style: {
-              background: isLoading ? 'var(--ui-stroke-tertiary)' : 'var(--ui-accent-secondary)',
-              color: 'var(--ui-text-primary)',
-              opacity: isLoading ? 0.6 : 1,
-            },
-            onClick: () => loadPage(urlInput.trim()),
-            disabled: isLoading,
-            children: isLoading ? 'Loading…' : 'Load'
+          jsx(Tip, {
+            label: 'Zoom out',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              disabled: zoomPercent <= 50,
+              onClick: zoomOut,
+              children: jsx(Codicon, { name: 'zoom-out' }),
+            }),
           }),
-          jsx('button', {
-            className: 'px-2 py-1 text-xs',
-            style: { color: 'var(--ui-text-tertiary)' },
-            onClick: () => loadPage(loadedUrl),
-            disabled: isLoading,
-            children: '↻'
+          jsx(Tip, {
+            label: 'Reset page zoom',
+            children: jsx(Button, {
+              variant: 'text',
+              size: 'micro',
+              className: 'w-10 justify-center font-mono tabular-nums',
+              onClick: resetZoom,
+              children: `${zoomPercent}%`,
+            }),
           }),
-          jsx('button', {
-            className: 'px-2 py-1 text-xs',
-            style: { color: isAnnotating ? 'var(--ui-green)' : 'var(--ui-text-tertiary)' },
-            onClick: toggleAnnotation,
-            children: isAnnotating ? '🎯 Annotating' : '📌 Annotate'
+          jsx(Tip, {
+            label: 'Zoom in',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              disabled: zoomPercent >= 200,
+              onClick: zoomIn,
+              children: jsx(Codicon, { name: 'zoom-in' }),
+            }),
           }),
-          jsx('button', {
-            className: 'px-2 py-1 text-xs rounded disabled:opacity-50',
-            style: { background: 'var(--ui-green)', color: 'var(--ui-text-primary)' },
-            onClick: sendToAgent,
-            disabled: pendingCount === 0,
-            children: `Send (${pendingCount})`
+          jsx(Tip, {
+            label: 'Open URL',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              disabled: isLoading,
+              onClick: () => loadPage(urlInput),
+              children: jsx(Codicon, { name: 'go-to-file' }),
+            }),
           }),
-          jsx('button', {
-            className: 'px-2 py-1 text-xs',
-            style: { color: 'var(--ui-text-tertiary)' },
-            onClick: clearAnnotations,
-            children: 'Clear'
-          })
-        ]
+        ],
       }),
-      // Preview area
       jsxs('div', {
-        className: 'flex-1 relative',
+        className: windowMinimized ? 'hidden' : 'flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2',
         children: [
-          jsx('iframe', {
-            ref: iframeRef,
-            className: 'w-full h-full border-0',
-            sandbox: 'allow-scripts',
+          jsxs(Button, {
+            variant: isAnnotating ? 'secondary' : 'ghost',
+            size: 'xs',
+            disabled: !annotationReady,
+            onClick: toggleAnnotation,
+            children: [
+              jsx(Codicon, { name: isAnnotating ? 'target' : 'inspect' }),
+              isAnnotating ? 'Selecting…' : 'Select element',
+            ],
+          }),
+          jsxs(Button, {
+            variant: 'ghost',
+            size: 'xs',
+            disabled: pendingCount === 0,
+            onClick: draftToChat,
+            children: [jsx(Codicon, { name: 'edit' }), 'Draft in chat'],
+          }),
+          pendingCount > 0 && jsx(Badge, { size: 'xs', variant: 'default', children: pendingCount }),
+          jsx('span', {
+            className: 'ml-1 min-w-0 flex-1 truncate text-[0.6875rem] text-muted-foreground',
+            children: isAnnotating
+              ? 'Click elements and batch your feedback.'
+              : annotationReady
+                ? 'Review notes, then draft them into chat.'
+                : 'Open a local URL to begin.',
+          }),
+          jsx(Button, {
+            variant: 'text',
+            size: 'micro',
+            disabled: annotations.length === 0,
+            onClick: clearAnnotations,
+            children: 'Clear',
+          }),
+          jsx(Tip, {
+            label: 'Maximize or restore browser',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              onClick: toggleMaximizeFloatingBrowser,
+              children: jsx(Codicon, { name: 'screen-full' }),
+            }),
+          }),
+          jsx(Tip, {
+            label: 'Hide browser',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              onClick: hideFloatingBrowser,
+              children: jsx(Codicon, { name: 'eye-closed' }),
+            }),
+          }),
+        ],
+      }),
+      jsxs('div', {
+        className: 'relative min-h-0 flex-1 overflow-hidden bg-background',
+        children: [
+          jsx('div', {
+            ref: previewHostRef,
+            className: loadedUrl ? 'h-full w-full' : 'hidden h-full w-full',
+          }),
+          !loadedUrl && jsx(EmptyState, {
+            className: 'h-full px-8',
+            title: 'Open a local preview',
+            description: 'Enter localhost:4321 in the address bar.',
+          }),
+          windowMinimized && jsx('div', {
+            className: 'pointer-events-none absolute right-2 bottom-2 z-20 rounded border border-border bg-background/90 px-2 py-1 text-[0.625rem] text-muted-foreground shadow-sm backdrop-blur-sm',
+            children: `${zoomPercent}% · compact preview`,
+          }),
+          loadError && jsxs('div', {
+            className: 'absolute top-3 right-3 left-3 z-20 flex items-start gap-2 border border-destructive/30 bg-background/95 px-3 py-2 text-xs shadow-lg backdrop-blur-sm',
+            children: [
+              jsx(Codicon, { name: 'warning', className: 'mt-0.5 shrink-0 text-destructive' }),
+              jsx('span', { className: 'min-w-0 flex-1 text-foreground', children: loadError }),
+              jsx(Button, {
+                variant: 'ghost',
+                size: 'icon-xs',
+                onClick: () => setLoadError(''),
+                children: jsx(Codicon, { name: 'close' }),
+              }),
+            ],
           }),
           showPopup && selectedElement && jsx(AnnotationPopup, {
             element: selectedElement,
             onSubmit: handleAddAnnotation,
-            onCancel: () => {
-              setShowPopup(false)
-              setSelectedElement(null)
-            }
-          })
-        ]
-      })
-    ]
+            onCancel: () => { setShowPopup(false); setSelectedElement(null) },
+          }),
+          jsx('div', {
+            className: 'absolute right-0 bottom-0 z-30 size-4 cursor-nwse-resize',
+            title: 'Resize TackMark browser',
+            onPointerDown: beginFloatingResize,
+            children: jsx(Codicon, {
+              name: 'gripper',
+              className: 'absolute right-0.5 bottom-0.5 rotate-45 text-muted-foreground',
+              size: '0.65rem',
+            }),
+          }),
+        ],
+      }),
+    ],
   })
 }
 
 // Status bar chip
-function StatusChip() {
-  return jsx('button', {
-    className: 'inline-flex h-full items-center gap-1 px-1.5 text-[0.6875rem] transition-colors text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover)',
-    onClick: () => {
-      haptic('tap')
-      host.notify({ kind: 'info', message: 'TackMark loaded' })
-    },
-    children: '📌'
+function LauncherButton() {
+  const launcherRef = useRef(null)
+  useEffect(() => {
+    const card = launcherRef.current?.closest('[data-floating-pane]')
+    if (!card) return
+    const header = card.querySelector('header')
+    if (header) header.style.display = 'none'
+    card.style.width = '44px'
+    card.style.height = '44px'
+    card.style.zIndex = '60'
+    applyStoredLauncherPosition(card)
+    const reflow = () => window.requestAnimationFrame(() => applyStoredLauncherPosition(card))
+    window.addEventListener('resize', reflow)
+    return () => window.removeEventListener('resize', reflow)
+  }, [])
+  return jsx(Tip, {
+    label: 'Show or hide TackMark browser',
+    children: jsx('button', {
+      ref: launcherRef,
+      className: 'flex h-full w-full cursor-grab rounded-md border border-border bg-background shadow-xl items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground',
+      onPointerDown: beginLauncherDrag,
+      'aria-label': 'Toggle TackMark browser',
+      children: jsx(Codicon, { name: 'browser', size: '1rem' }),
+    }),
   })
 }
 
@@ -710,6 +1146,7 @@ export default {
   id: ID,
   name: 'TackMark',
   register(ctx) {
+    clearLegacyCollapsedState()
     // Wire plugin-scoped storage (replaces direct localStorage)
     if (ctx.storage) {
       pluginStorage._impl = ctx.storage
@@ -729,22 +1166,55 @@ export default {
 
     // Register preview panel
     ctx.register({
-      id: 'preview',
+      id: 'floating-browser',
       area: 'panes',
       title: 'TackMark',
       data: {
-        placement: 'right',
-        width: '50%',
+        placement: 'floating',
+        anchor: 'top-left',
+        width: '720px',
+        height: '540px',
       },
       render: () => jsx(PreviewPanel, {})
     })
 
-    // Register status bar chip
+    // Rebindable Orca-style browser visibility shortcut (Ctrl/Cmd+Alt+A by default).
     ctx.register({
-      id: 'chip',
-      area: 'statusBar.right',
-      order: 130,
-      render: () => jsx(StatusChip, {})
+      id: 'toggle-browser-keybind',
+      area: KEYBINDS_AREA,
+      data: {
+        id: 'tackmark.toggleBrowser',
+        category: 'view',
+        defaults: ['mod+alt+a'],
+        label: 'TackMark: Show or hide browser',
+        run: toggleFloatingBrowser,
+      },
+    })
+
+    ctx.register({
+      id: 'toggle-browser-command',
+      area: PALETTE_AREA,
+      data: {
+        id: 'tackmark.toggleBrowser',
+        action: 'tackmark.toggleBrowser',
+        label: 'TackMark: Show or hide browser',
+        keywords: ['tackmark', 'browser', 'show', 'hide', 'floating'],
+        run: toggleFloatingBrowser,
+      },
+    })
+
+    // Persistent Orca-style launcher stays visible when the browser is hidden or minimized.
+    ctx.register({
+      id: 'floating-launcher',
+      area: 'panes',
+      title: '',
+      data: {
+        placement: 'floating',
+        anchor: 'top-right',
+        width: '44px',
+        height: '44px',
+      },
+      render: () => jsx(LauncherButton, {}),
     })
   }
 }

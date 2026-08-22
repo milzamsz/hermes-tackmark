@@ -49,6 +49,16 @@ checkFalse('too long selector', validateMessage(longSelector).valid)
 const longText = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [], text: 'x'.repeat(LIMITS.text + 1) } }
 checkFalse('too long text', validateMessage(longText).valid)
 
+const validHtml = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  outerHTML: '<div>hello</div>', contextHTML: '<section><div>hello</div></section>' } }
+checkTrue('bounded HTML evidence accepted', validateMessage(validHtml).valid)
+const longOuterHtml = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  outerHTML: 'x'.repeat(LIMITS.outerHTML + 1) } }
+checkFalse('oversized outer HTML rejected', validateMessage(longOuterHtml).valid)
+const longContextHtml = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [],
+  contextHTML: 'x'.repeat(LIMITS.contextHTML + 1) } }
+checkFalse('oversized nearby HTML rejected', validateMessage(longContextHtml).valid)
+
 // Disallowed style key
 const badStyle = { type: 'tackmark-element-selected', element: { tag: 'div', classes: [], styles: { evilKey: 'value' } } }
 checkFalse('disallowed style key', validateMessage(badStyle).valid)

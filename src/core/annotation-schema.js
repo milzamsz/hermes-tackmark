@@ -11,6 +11,8 @@ export const SCHEMA_VERSION = 1
 export const LIMITS = {
   selector: 1000,
   text: 300,
+  outerHTML: 2000,
+  contextHTML: 3500,
   classes: 50,
   classLength: 200,
   attributes: 30,
@@ -92,6 +94,15 @@ export function validateMessage(data) {
   if (element.id !== undefined && element.id !== null) {
     if (typeof element.id !== 'string' || element.id.length > LIMITS.classLength) {
       return { valid: false, reason: 'ID too long or not a string' }
+    }
+  }
+
+  // Rich DOM evidence: optional, bounded strings.
+  for (const [key, limit] of [['outerHTML', LIMITS.outerHTML], ['contextHTML', LIMITS.contextHTML]]) {
+    if (element[key] !== undefined && element[key] !== null) {
+      if (typeof element[key] !== 'string' || element[key].length > limit) {
+        return { valid: false, reason: `${key} too long or not a string` }
+      }
     }
   }
 

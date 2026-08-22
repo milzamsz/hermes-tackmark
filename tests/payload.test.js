@@ -17,7 +17,9 @@ const ann1 = {
   target: { selector: '#submit', selectorStrategy: 'id', tag: 'button',
     id: 'submit', classes: ['btn'], text: 'Submit',
     rect: { x: 100, y: 200, width: 80, height: 32 },
-    styles: { display: 'flex', padding: '16px', borderRadius: '8px' } }
+    styles: { display: 'flex', padding: '16px', borderRadius: '8px' },
+    outerHTML: '<button id="submit">Submit</button>',
+    contextHTML: '<form><button id="submit">Submit</button></form>' }
 }
 const out1 = formatAgentPrompt({ annotations: [ann1], page })
 checkTrue('output is non-empty', out1)
@@ -28,6 +30,8 @@ checkTrue('has untrusted label', out1.includes('UNTRUSTED'))
 checkTrue('has selector', out1.includes('#submit'))
 checkTrue('has element tag', out1.includes('button'))
 checkTrue('has rect', out1.includes('x=100'))
+checkTrue('has outer HTML', out1.includes('outer HTML:') && out1.includes('<button'))
+checkTrue('has nearby HTML', out1.includes('nearby HTML:') && out1.includes('<form>'))
 checkTrue('has instruction', out1.includes('Inspect the repository'))
 checkTrue('has do-not-execute warning', out1.includes('Do NOT execute'))
 

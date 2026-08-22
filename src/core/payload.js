@@ -2,7 +2,7 @@
  * hermes-tackmark — Payload formatter
  *
  * Pure function that formats validated annotations into bounded text
- * for prompt.submit. Separates trusted user note from untrusted page evidence.
+ * for an editable Hermes composer draft. Separates trusted user note from untrusted page evidence.
  */
 
 import { LIMITS } from './annotation-schema.js'
@@ -14,7 +14,7 @@ import { LIMITS } from './annotation-schema.js'
  * @param {Array} input.annotations - Validated annotation objects
  * @param {object} input.page - Page info { url, path }
  * @param {object} [input.session] - Session metadata
- * @returns {string} - Bounded text for prompt.submit
+ * @returns {string} - Bounded text to stage in the composer
  */
 export function formatAgentPrompt({ annotations, page, session }) {
   if (!Array.isArray(annotations) || annotations.length === 0) return ''
@@ -52,6 +52,8 @@ export function formatAgentPrompt({ annotations, page, session }) {
       parts.push(`  classes: ${target.classes.slice(0, LIMITS.classes).join(', ')}`)
     }
     if (target.text) parts.push(`  text: ${truncate(target.text, LIMITS.text)}`)
+    appendEvidenceBlock(parts, 'outer HTML', target.outerHTML, LIMITS.outerHTML)
+    appendEvidenceBlock(parts, 'nearby HTML', target.contextHTML, LIMITS.contextHTML)
     const rect = target.rect || target.position
     if (rect && typeof rect === 'object') {
       parts.push(`  rect: x=${rect.x ?? '?'}, y=${rect.y ?? '?'}, w=${rect.width ?? '?'}, h=${rect.height ?? '?'}`)
@@ -108,6 +110,14 @@ export function formatAgentPrompt({ annotations, page, session }) {
   }
 
   return result
+}
+
+function appendEvidenceBlock(parts, label, value, max) {
+  if (!value || typeof value !== 'string') return
+  parts.push(`  ${label}:`)
+  for (const line of truncate(value, max).split(/\r?\n/)) {
+    parts.push(`    ${line}`)
+  }
 }
 
 function truncate(str, max) {
