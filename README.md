@@ -111,7 +111,7 @@ TackMark does **not** call `prompt.submit`, does not start agent processing auto
 ```bash
 git clone https://github.com/milzamsz/hermes-tackmark.git
 cd hermes-tackmark
-npm ci
+npm install
 npm run build
 ```
 
@@ -235,7 +235,7 @@ coding agent
 ## Development
 
 ```bash
-npm ci
+npm install
 npm test
 python -m unittest tests.test_server -v
 npm run bundle
