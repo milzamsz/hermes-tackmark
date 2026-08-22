@@ -62,7 +62,7 @@ Hermes TackMark instead uses an isolated Electron `<webview>`, following Hermes 
 | Launcher | Panel entry | Independently draggable floating launcher |
 | Shortcut | Not central to workflow | `Ctrl/Cmd+Alt+A` show/hide, rebindable |
 | Zoom | Page-dependent | Native 50–200% webview zoom + Ctrl/Cmd-wheel |
-| Annotation delivery | Immediate session submission | Editable draft in focused Hermes composer |
+| Annotation delivery | Direct session submission after clicking Send | Editable draft in focused Hermes composer |
 | Evidence | Selector and basic element details | Selector, strategy, DOM, styles, geometry, metadata, screenshot |
 | URL policy | Broad local fetch behavior | Parsed loopback-first policy |
 | Security framing | Basic payload | Bounded schema and explicit untrusted-page evidence |
@@ -102,7 +102,7 @@ Selecting an element captures bounded implementation evidence:
 
 - Escaped CSS selector and selector strategy.
 - Tag, ID, class list, and visible text.
-- Element rectangle and click position.
+- Element rectangle; click position is used only to place the annotation popup.
 - Selected computed styles.
 - Bounded element `outerHTML`.
 - Bounded nearby/parent HTML.
@@ -222,7 +222,7 @@ Most framework development servers already work directly with the native webview
 python serve.py /absolute/path/to/site 8080
 ```
 
-Then open `http://localhost:8080` in TackMark.
+Then open an explicit file URL such as `http://localhost:8080/index.html` in TackMark. Directory URLs, including `/`, return `403` by design so the helper cannot enumerate directories.
 
 The helper server includes path-containment checks, deny patterns, and narrowed CORS handling. It is optional; it is **not** required for Astro, Vite, Next.js, Odoo, or another application already serving itself.
 
@@ -236,7 +236,7 @@ TackMark treats the previewed page as untrusted input.
 - The webview uses context isolation, disabled Node integration, and sandboxing.
 - Page-to-plugin messages pass through a bounded runtime schema.
 - Captured text, HTML, styles, metadata, and selectors have size limits.
-- Passwords, cookies, tokens, authentication values, and secret-like attributes are not intentionally captured.
+- Selected semantic metadata applies a best-effort deny list for secret-like attribute names. Captured text and bounded DOM excerpts are not comprehensively redacted and may still contain sensitive page data; review the draft before sending and do not annotate secret-bearing elements.
 - Page-derived evidence is labeled **UNTRUSTED** in the generated draft.
 - Page content is evidence, never an instruction for the agent.
 - Drafting does not automatically submit or execute anything.
@@ -334,7 +334,7 @@ Screenshot capture is best-effort and depends on Electron `webview.capturePage` 
 
 - TackMark previews web applications only; it does not annotate native desktop UI outside its webview.
 - The default URL policy is loopback-only and exposes no UI for adding remote hosts.
-- Authentication state belongs to the isolated webview session and may differ from your normal browser.
+- Authentication state is separate from your normal browser but persists in the shared Hermes preview partition (`persist:hermes-preview`) and may be visible to other Hermes preview webviews.
 - Cross-origin frames and closed shadow roots can prevent deep element inspection.
 - Dynamic pages can invalidate a selector after navigation or a substantial rerender; capture a new annotation when that happens.
 - Screenshot attachment and composer insertion depend on the Hermes Desktop plugin APIs available in the installed Hermes version.
