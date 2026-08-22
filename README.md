@@ -115,11 +115,13 @@ npm install
 npm run build
 ```
 
-`npm run build` bundles the source and installs it to:
+`npm run build` bundles the source and installs it under the active Hermes home:
 
 ```text
-~/.hermes/desktop-plugins/hermes-tackmark/plugin.js
+${HERMES_HOME:-$HOME/.hermes}/desktop-plugins/hermes-tackmark/plugin.js
 ```
+
+When `HERMES_HOME` is set (for example, for a named profile), the installer respects it. Otherwise it defaults to `~/.hermes`.
 
 The plugin folder and declared plugin ID are both `hermes-tackmark`; they must remain identical.
 
@@ -130,8 +132,9 @@ Open the Hermes Command Palette and run **Reload desktop plugins**. Hermes norma
 If you already have `dist/plugin.js`:
 
 ```bash
-mkdir -p ~/.hermes/desktop-plugins/hermes-tackmark
-cp dist/plugin.js ~/.hermes/desktop-plugins/hermes-tackmark/plugin.js
+HERMES_HOME=${HERMES_HOME:-$HOME/.hermes}
+mkdir -p "$HERMES_HOME/desktop-plugins/hermes-tackmark"
+cp dist/plugin.js "$HERMES_HOME/desktop-plugins/hermes-tackmark/plugin.js"
 ```
 
 Do not copy `src/plugin.js` directly. The source imports local core modules and must be bundled first.

@@ -28,6 +28,7 @@ assert.doesNotMatch(source, /onClick: \(\) => \{[\s\S]{0,120}launcherDragged/, '
 assert.match(source, /TackMark — compact/, 'minimize renders a distinct compact browser bar')
 assert.match(source, /WINDOW_STATE_EVENT/, 'minimize and restore synchronize UI state')
 assert.match(source, /card\.style\.width = '360px'/, 'minimize uses a compact browser width')
+assert.match(source, /onClick: minimizeFloatingBrowser/, 'compact minimize action is wired to a visible control')
 assert.match(source, /card\.style\.height = '220px'/, 'minimize keeps a usable live browser preview')
 assert.match(source, /compact preview/, 'compact state visibly remains a browser window')
 assert.match(source, /card\.style\.zIndex = '60'/, 'launcher stays above the browser')
@@ -63,4 +64,4 @@ assert.doesNotMatch(source, /iframe\.srcdoc/, 'does not reconstruct pages with s
 assert.doesNotMatch(source, /function fitPreview/, 'does not scale or compress the target page')
 assert.doesNotMatch(source, /Page loaded without annotation/, 'does not silently fall back without annotation')
 
-console.log('57 passed, 0 failed — native webview architecture')
+console.log('58 passed, 0 failed — native webview architecture')

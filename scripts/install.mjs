@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(__dirname, '..')
 const bundledFile = join(repoRoot, 'dist', 'plugin.js')
-const hermesHome = join(homedir(), '.hermes')
+const hermesHome = process.env.HERMES_HOME || join(homedir(), '.hermes')
 const pluginDir = join(hermesHome, 'desktop-plugins', 'hermes-tackmark')
 const installTarget = join(pluginDir, 'plugin.js')
 

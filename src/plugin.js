@@ -1077,6 +1077,15 @@ function PreviewPanel() {
             children: 'Clear',
           }),
           jsx(Tip, {
+            label: 'Minimize browser',
+            children: jsx(Button, {
+              variant: 'ghost',
+              size: 'icon-xs',
+              onClick: minimizeFloatingBrowser,
+              children: jsx(Codicon, { name: 'chrome-minimize' }),
+            }),
+          }),
+          jsx(Tip, {
             label: 'Maximize or restore browser',
             children: jsx(Button, {
               variant: 'ghost',
